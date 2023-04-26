@@ -1,0 +1,43 @@
+{
+  "name": "chat-gtp-telegram-bot",
+  "version": "1.0.0",
+  "main": "./src",
+  "scripts": {
+    "start": "npm run rm:public && cross-env NODE_ENV=production ts-node --files -r tsconfig-paths/register ./src",
+    "watch": "npm run rm:public && cross-env ts-node-dev --files --respawn --inspect -r tsconfig-paths/register ./src",
+    "build": "npm run rm:public && cross-env NODE_ENV=production tsc && tsc-alias && npm run copy:files",
+    "rm:public": "rm -rf ./public",
+    "copy:files": "cp .env ./public/.env && cp -R ./src/templates ./public",
+    "lint": "eslint --debug ./src",
+    "lint:write": "eslint --debug ./src --fix",
+    "prettier": "prettier \"**/*.+(js|jsx|json|css|md)\"",
+    "prettier:write": "prettier --write \"**/*.+(js|jsx|json|css|md)\""
+  },
+  "author": "Watscho Aiwasov",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/fluent-ffmpeg": "2.1.21",
+    "@types/node": "18.8.3",
+    "@typescript-eslint/eslint-plugin": "5.39.0",
+    "@typescript-eslint/parser": "5.39.0",
+    "cross-env": "7.0.3",
+    "eslint": "8.25.0",
+    "eslint-config-prettier": "8.5.0",
+    "eslint-plugin-import": "2.26.0",
+    "eslint-plugin-prettier": "4.2.1",
+    "eslint-plugin-unicorn": "44.0.2",
+    "prettier": "2.7.1",
+    "ts-node": "10.9.1",
+    "ts-node-dev": "2.0.0",
+    "tsc-alias": "1.7.0",
+    "tsconfig-paths": "4.1.0",
+    "typescript": "4.8.4"
+  },
+  "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "1.1.0",
+    "dotenv": "16.0.3",
+    "fluent-ffmpeg": "2.1.2",
+    "openai": "3.2.1",
+    "telegraf": "4.12.2"
+  }
+}
