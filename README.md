@@ -5,8 +5,7 @@
 
 ## Chat GPT Telegram BOT `TypeScript`
 
-- Chat
-- Voice messages
+The Chat GPT Telegram bot is powered by advanced natural language processing (NLP) algorithms, which allow it to understand and respond to complex queries with high accuracy. Whether you're looking for quick answers to common questions or engaging in a more in-depth conversation, Chat GPT can handle it all.
 
 ### Package list
 
