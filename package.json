@@ -1,7 +1,23 @@
 {
   "name": "chat-gtp-telegram-bot",
   "version": "1.0.0",
+  "description": "Chat GPT - Telegram bot + voice command",
   "main": "./src",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/watscho/chat-gpt-telegram-bot"
+  },
+  "bugs": "https://github.com/watscho/chat-gpt-telegram-bot/issues",
+  "keywords": [
+    "telegram",
+    "bot",
+    "chat",
+    "gpt",
+    "chatgpt",
+    "voicebot",
+    "nodejs",
+    "openai"
+  ],
   "scripts": {
     "start": "npm run rm:public && cross-env NODE_ENV=production ts-node --files -r tsconfig-paths/register ./src",
     "watch": "npm run rm:public && cross-env ts-node-dev --files --respawn --inspect -r tsconfig-paths/register ./src",
