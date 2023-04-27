@@ -26,7 +26,7 @@ export class TelegramBot {
     this.bot.command('start', async ctx => {
       ctx.session = INITIAL_SESSION
 
-      await ctx.reply(code('The session has been reset.'))
+      await ctx.reply(code('The session has been started.'))
     })
   }
 
