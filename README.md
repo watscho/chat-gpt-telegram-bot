@@ -7,6 +7,8 @@
 
 The Chat GPT Telegram bot is powered by advanced natural language processing (NLP) algorithms, which allow it to understand and respond to complex queries with high accuracy. Whether you're looking for quick answers to common questions or engaging in a more in-depth conversation, Chat GPT can handle it all.
 
+![example](https://user-images.githubusercontent.com/35995947/234796038-57ac438f-9e0b-42c9-a9d3-e3571bc71d13.gif)
+
 ### Package list
 
 | Package                  | Description                                                                                                                                                                                                                                                                                                                                                    |
