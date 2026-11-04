@@ -1,59 +1,53 @@
 {
-  "name": "chat-gtp-telegram-bot",
-  "version": "1.0.0",
-  "description": "Chat GPT - Telegram bot + voice command",
-  "main": "./src",
+  "name": "chat-gpt-telegram-bot",
+  "version": "2.0.0",
+  "private": true,
+  "description": "A TypeScript Telegram bot with isolated conversations and voice transcription.",
+  "type": "module",
+  "main": "dist/index.js",
+  "license": "MIT",
+  "author": "Vacho Aivazov",
   "repository": {
     "type": "git",
-    "url": "https://github.com/watscho/chat-gpt-telegram-bot"
+    "url": "git+https://github.com/watscho/chat-gpt-telegram-bot.git"
   },
-  "bugs": "https://github.com/watscho/chat-gpt-telegram-bot/issues",
-  "keywords": [
-    "telegram",
-    "bot",
-    "chat",
-    "gpt",
-    "chatgpt",
-    "voicebot",
-    "nodejs",
-    "openai"
-  ],
+  "bugs": {
+    "url": "https://github.com/watscho/chat-gpt-telegram-bot/issues"
+  },
+  "engines": {
+    "node": ">=26.13.0 <27"
+  },
+  "packageManager": "npm@11.20.0",
   "scripts": {
-    "start": "npm run rm:public && cross-env NODE_ENV=production ts-node --files -r tsconfig-paths/register ./src",
-    "watch": "npm run rm:public && cross-env ts-node-dev --files --respawn --inspect -r tsconfig-paths/register ./src",
-    "build": "npm run rm:public && cross-env NODE_ENV=production tsc && tsc-alias && npm run copy:files",
-    "rm:public": "rm -rf ./public",
-    "copy:files": "cp .env ./public/.env && cp -R ./src/templates ./public",
-    "lint": "eslint --debug ./src",
-    "lint:write": "eslint --debug ./src --fix",
-    "prettier": "prettier \"**/*.+(js|jsx|json|css|md)\"",
-    "prettier:write": "prettier --write \"**/*.+(js|jsx|json|css|md)\""
-  },
-  "author": "Watscho Aiwasov",
-  "license": "MIT",
-  "devDependencies": {
-    "@types/fluent-ffmpeg": "2.1.21",
-    "@types/node": "18.8.3",
-    "@typescript-eslint/eslint-plugin": "5.39.0",
-    "@typescript-eslint/parser": "5.39.0",
-    "cross-env": "7.0.3",
-    "eslint": "8.25.0",
-    "eslint-config-prettier": "8.5.0",
-    "eslint-plugin-import": "2.26.0",
-    "eslint-plugin-prettier": "4.2.1",
-    "eslint-plugin-unicorn": "44.0.2",
-    "prettier": "2.7.1",
-    "ts-node": "10.9.1",
-    "ts-node-dev": "2.0.0",
-    "tsc-alias": "1.7.0",
-    "tsconfig-paths": "4.1.0",
-    "typescript": "4.8.4"
+    "dev": "node --env-file-if-exists=.env --import tsx --watch src/index.ts",
+    "watch": "npm run dev",
+    "start": "node --env-file-if-exists=.env --enable-source-maps dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "build": "node scripts/build.mjs",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:coverage": "node --import tsx --experimental-test-coverage --test-coverage-lines=90 --test-coverage-branches=90 --test-coverage-functions=85 --test-coverage-include=\"src/**/*.ts\" --test tests/*.test.ts",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build"
   },
   "dependencies": {
-    "@ffmpeg-installer/ffmpeg": "1.1.0",
-    "dotenv": "16.0.3",
-    "fluent-ffmpeg": "2.1.2",
-    "openai": "3.2.1",
-    "telegraf": "4.12.2"
+    "openai": "7.50.0",
+    "telegraf": "4.16.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.6.6",
+    "eslint": "10.14.0",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.14.0",
+    "prettier": "3.9.10",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1"
+  },
+  "overrides": {
+    "minimatch": "11.0.4"
   }
 }
