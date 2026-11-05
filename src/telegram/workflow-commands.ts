@@ -20,6 +20,8 @@ export interface WorkflowContext {
   imported(): void
 }
 const sections: Record<string, string> = {
+  studio:
+    'Pro Studio\n/workspace opens projects, Inbox, tasks, results and estimates. /inbox on captures without generation; /inbox process reviews a batch. /autopilot goal and /investigate question propose durable plans. /chain CONNECTION | request ;; CONNECTION | request pauses for draft review and exact tool approvals. /missions and /mission ID show checkpoints. /result ID supports versions, edits and exports.',
   pro: 'Provider workbench\n/pro shows setup. /analyze runs reviewed Python analysis with output files. /knowledge manages opt-in project cloud search. /connections and /connect use configured external services with exact tool approvals. /meeting prepares recording protocols and reviewed tasks. /live opens the voice Mini App. /cloud_cleanup inspects outstanding provider resources.',
   daily:
     'Daily workflows\n/today shows tasks and ready results. /morning 09:00 enables a local morning dashboard. /scenarios and /favorites launch reusable workflows; /notes on turns voice messages into reviewed task proposals. /read URL reads an article; /continue reviews project context. /onboarding restarts guided setup.',

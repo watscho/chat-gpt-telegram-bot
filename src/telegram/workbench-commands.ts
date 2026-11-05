@@ -173,7 +173,7 @@ export class WorkbenchCommands {
       project = this.ws.thread(ctx.owner, ctx.thread).project
     if (command === 'pro') {
       await ctx.text(
-        `Provider workbench: ${this.data.enabled() ? 'configured; account access must still be verified' : 'not configured'}\n/analyze — Python analysis and output files\n/knowledge — opt-in cloud semantic library\n/connections — your operator-configured external services\n/meeting — recording transcript, protocol and reviewed tasks\n/live — live voice Mini App\n/cloud_cleanup — inspect pending provider-resource cleanup\nAll generation uses API quota. Uploaded cloud files can be retained for up to seven days.`
+        `Provider workbench: ${this.data.enabled() ? 'configured; account access must still be verified' : 'not configured'}\n/analyze — Python analysis and output files\n/knowledge — opt-in cloud semantic library\n/connections — your operator-configured external services\n/meeting — recording transcript, protocol and reviewed tasks\n/live — live voice Mini App\n/cloud_cleanup — inspect pending provider-resource cleanup\n/workspace, /autopilot, /inbox, /investigate and /chain — reviewed Pro Studio workflows\nAll generation uses API quota. Uploaded cloud files can be retained for up to seven days.`
       )
       return true
     }

@@ -63,3 +63,7 @@ Normal `/meeting` uses `OPENAI_MEETING_MODEL=gpt-transcribe` and never invents s
 Adjacent unit tests cover adapters with fake fetch/SDK responses, scoped retrieval, approval replay and destination changes, failure cleanup, quota reservations, Telegram handlers, signed Mini App requests, HTTP routing with a fake server, browser controller races with injected ports, and recording protocol review. Tests do not open real sockets, microphones or browser sessions, run native decoders/SQLite/PDF parsers, or call paid providers. Static type/lint/format/build checks qualify the bundled source, not a deployment or provider/account acceptance. Public HTTPS, microphone/WebRTC interoperability, MCP service behavior and live model access remain operator setup/acceptance work.
 
 References: [Code Interpreter](https://developers.openai.com/api/docs/guides/tools-code-interpreter), [File Search](https://developers.openai.com/api/docs/guides/tools-file-search), [MCP](https://developers.openai.com/api/docs/guides/tools-connectors-mcp), [transcription](https://developers.openai.com/api/docs/guides/transcription), [Telegram Web App validation](https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app).
+
+## Studio integration (9.0)
+
+[Pro Studio](pro-studio.md) composes these adapters into durable reviewed missions and adds a workspace under the same HTTPS Mini App base. Existing cleanup, account-access, cost and remote-effect limitations still apply. The workspace does not require live voice activation or microphone permission.

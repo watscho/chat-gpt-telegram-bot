@@ -1,5 +1,17 @@
 # Changelog
 
+## 9.0.0 — Pro Studio
+
+- Add reviewed multi-stage autopilot recipes and public evidence/counter-evidence research with retained sources and explicit uncertainty.
+- Add a private Inbox for text, links, photos, documents and untranscribed recording metadata, including scoped batch processing and existing task/meeting reviews.
+- Add authenticated project/files/tasks/Inbox/mission/results/usage workspace pages to the existing Mini App server.
+- Add owner-scoped MCP service chains with an editable draft checkpoint, exact per-action Telegram approvals and retained reported-result receipts.
+- Persist stage claims before effects, resume completed checkpoints, stop uncertain attempts for manual review and preserve cancellation across restart.
+- Add text/artifact versions, unique passage replacement, changed-block comparisons, restore, exports and separately reviewed paid revisions.
+- Keep shared quotas/capacity, revalidate configured estimates before spending, permit cancellation at saturated capacity, and include Studio in private exports/erasure while preserving destination state during import.
+- Update English navigation, configuration, lifecycle/security/operations guidance and the unit-only qualification contract.
+- Pass 329 adjacent unit tests with 100% executable-source lines, branches and functions; type, lint, format and build checks pass without paid/native/browser acceptance runs.
+
 ## 8.0.0 — Provider workbench
 
 - Add reviewed Code Interpreter analysis with isolated provider containers and bounded downloadable artifacts.

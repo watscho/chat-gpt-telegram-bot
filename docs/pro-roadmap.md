@@ -39,3 +39,7 @@ Status: implemented and verified with unit/static checks. This document defines 
 Release version: 4.0.0. The completed five-phase scope covers all ten items above. The unit suite contains 140 tests with 100% executable source line, branch and function coverage; thresholds and production measurement scope are unchanged. Static type checking, ESLint, Prettier and production compilation are required alongside it.
 
 All service/native boundaries use doubles. No live provider request, real SQLite migration/durability test, application subprocess test, native FFmpeg invocation, real PDF render, browser or Docker build/run was performed. CI preserves this unit-only policy. `npm audit` is a separate dependency-metadata query, not a native/live acceptance test. Deployment and external-provider/native behavior remain unqualified by this evidence.
+
+## 9.0 Studio extension
+
+The seven approved Studio directions are implemented as reviewed autopilot recipes, a private unified Inbox, public source/counter-evidence research, a working Mini App, draft-reviewed service chains, durable checkpoints/uncertainty handling and versioned results. [The Studio acceptance and lifecycle contract](pro-studio.md) distinguishes unit/static qualification from deployment and provider acceptance.

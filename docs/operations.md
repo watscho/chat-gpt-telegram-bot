@@ -107,3 +107,7 @@ Include `daily` in access controls/backups/erasure reviews. Expired pending payl
 ## Operating provider workflows
 
 Before enabling the 8.0 workflows, follow [provider setup and qualification](pro-provider.md). Build browser assets, configure a public HTTPS proxy if live voice is enabled, and inspect `/cloud_cleanup` after failures. Complete remote cleanup before rollback; preserve unresolved cleanup records when backing up or restoring state.
+
+## Operating Pro Studio
+
+Rebuild before restarting the shared voice/workspace Mini App. Run one bot process per state file. Inspect `/missions` after restart: queued untouched steps may continue, while interrupted attempts require external-state inspection and a fresh `/mission retry ID confirm` review. `/mission cancel ID` bypasses saturated admission. Milestone delivery is claimed once and suppressed during quiet/digest windows; users can retrieve results explicitly. Cancel unfinished missions before rollback and protect Studio-containing exports/backups. See [Studio operations and limits](pro-studio.md).

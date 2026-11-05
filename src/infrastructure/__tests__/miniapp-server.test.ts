@@ -256,3 +256,133 @@ void test('Mini App HTTP routing authenticates owners and bounds requests withou
   await assert.rejects(new MiniAppServer(settings, backend).stop())
   closeError = false
 })
+
+import { studioSetup, studioFile } from '../../__tests__/studio.js'
+void test('workspace endpoints share Telegram authentication and expose only owner-scoped snapshots, strict actions and attachment downloads', async () => {
+  const s = studioSetup(),
+    mission = await s.finish(s.plan()),
+    settings = s.settings
+  settings.workbench.miniAppURL = 'https://voice.example.com/voice'
+  const backend = {
+    liveStatus: () => ({
+      enabled: true,
+      seconds: 60,
+      estimate: 1,
+      project: null
+    }),
+    openLive: () => Promise.resolve({ id: 'rtc1', sdp: 'v=0', expiresAt: 1 }),
+    closeLive: () => Promise.resolve(),
+    workspace: s.view.snapshot.bind(s.view),
+    workspaceAction: s.view.action.bind(s.view),
+    workspaceFile: s.view.file.bind(s.view)
+  }
+  const server = new MiniAppServer(settings, backend)
+  const request = async (
+    path: string,
+    method = 'GET',
+    body?: Record<string, unknown>
+  ) => {
+    const response = new Response(),
+      req = {
+        url: path,
+        method,
+        headers: {
+          'x-telegram-init-data': signed(settings.telegramToken),
+          'content-type': 'application/json'
+        },
+        async *[Symbol.asyncIterator]() {
+          if (body)
+            yield await Promise.resolve(Buffer.from(JSON.stringify(body)))
+        }
+      }
+    await server.handle(
+      req as unknown as IncomingMessage,
+      response as unknown as ServerResponse
+    )
+    return response
+  }
+  for (const path of [
+    '/voice/workspace',
+    '/voice/workspace/',
+    '/voice/workspace.css',
+    '/voice/workspace-client.js'
+  ])
+    assert.equal((await request(path)).status, 200)
+  assert.equal((await request('/voice/api/workspace')).status, 200)
+  const detail = await request(`/voice/api/workspace?mission=${mission.id}`)
+  assert.equal(detail.status, 200)
+  assert.match(detail.body, /Report based/)
+  assert.ok(!detail.body.includes(studioFile.data))
+  assert.equal(
+    (await request('/voice/api/workspace?mission=' + 'x'.repeat(121))).status,
+    400
+  )
+  assert.equal(
+    (
+      await request('/voice/api/workspace/action', 'POST', {
+        action: 'inspect',
+        id: mission.id
+      })
+    ).status,
+    200
+  )
+  assert.equal(
+    (
+      await request('/voice/api/workspace/action', 'POST', {
+        action: 'approve',
+        id: mission.id,
+        revision: mission.revision
+      })
+    ).status,
+    400
+  )
+  const version = s.studio.result('42:42', mission.id),
+    query = `/voice/api/workspace/file?mission=${mission.id}&version=${version.id}&name=${studioFile.name}`
+  const file = await request(query)
+  assert.equal(file.status, 200)
+  assert.match(file.headers['Content-Disposition']!, /attachment/)
+  assert.equal(
+    Buffer.from(file.body).toString(),
+    Buffer.from(studioFile.data, 'base64').toString()
+  )
+  for (const path of [
+    '/voice/api/workspace/file',
+    `/voice/api/workspace/file?mission=x&version=y`,
+    '/voice/api/workspace/file?mission=' +
+      'x'.repeat(121) +
+      '&version=y&name=z',
+    '/voice/api/workspace/file?mission=x&version=' +
+      'x'.repeat(121) +
+      '&name=z',
+    '/voice/api/workspace/file?mission=x&version=y&name=' + 'x'.repeat(201)
+  ])
+    assert.equal((await request(path)).status, 400)
+  const unsupported = new MiniAppServer(settings, {
+    liveStatus: backend.liveStatus,
+    openLive: backend.openLive,
+    closeLive: backend.closeLive
+  })
+  for (const [path, method, body] of [
+    ['/voice/api/workspace', 'GET', undefined],
+    ['/voice/api/workspace/file', 'GET', undefined],
+    ['/voice/api/workspace/action', 'POST', {}]
+  ] as const) {
+    const r = new Response(),
+      req = {
+        url: path,
+        method,
+        headers: {
+          'x-telegram-init-data': signed(settings.telegramToken),
+          'content-type': 'application/json'
+        },
+        async *[Symbol.asyncIterator]() {
+          if (body) yield await Promise.resolve(Buffer.from('{}'))
+        }
+      }
+    await unsupported.handle(
+      req as unknown as IncomingMessage,
+      r as unknown as ServerResponse
+    )
+    assert.equal(r.status, 400)
+  }
+})

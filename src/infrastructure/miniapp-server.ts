@@ -1,3 +1,6 @@
+import { workspacePage, workspaceStyles } from '../web/workspace-page.js'
+import type { WorkspaceView } from '../application/studio-workspace.js'
+import type { Document } from '../domain/conversation.js'
 import {
   createServer,
   type IncomingMessage,
@@ -11,6 +14,14 @@ import { miniAppOwner } from './miniapp-auth.js'
 import { voicePage, voiceStyles } from '../web/voice-page.js'
 
 export interface LiveBackend {
+  workspace?(owner: string, missionId?: string): WorkspaceView
+  workspaceAction?(owner: string, body: Record<string, unknown>): WorkspaceView
+  workspaceFile?(
+    owner: string,
+    missionId: string,
+    version: string,
+    name: string
+  ): Document
   liveStatus(owner: string): {
     enabled: boolean
     seconds: number
@@ -40,10 +51,15 @@ export class MiniAppServer {
     this.origin = url.origin
     this.base = url.pathname.replace(/\/$/, '')
     this.scripts = Object.fromEntries(
-      ['voice-client.js', 'live-controller.js'].map(file => [
-        `${this.base}/${file}`,
-        readFileSync(new URL(`../../dist/web/${file}`, import.meta.url), 'utf8')
-      ])
+      ['voice-client.js', 'live-controller.js', 'workspace-client.js'].map(
+        file => [
+          `${this.base}/${file}`,
+          readFileSync(
+            new URL(`../../dist/web/${file}`, import.meta.url),
+            'utf8'
+          )
+        ]
+      )
     )
     this.server = createServer((request, response) => {
       void this.handle(request, response).catch(() => {
@@ -52,7 +68,7 @@ export class MiniAppServer {
             'Content-Type': 'application/json',
             'Cache-Control': 'no-store'
           })
-          response.end(JSON.stringify({ error: 'Voice service failed.' }))
+          response.end(JSON.stringify({ error: 'Mini App service failed.' }))
         } else response.destroy()
       })
     })
@@ -79,7 +95,7 @@ export class MiniAppServer {
   private send(
     response: ServerResponse,
     status: number,
-    value: string,
+    value: string | Uint8Array,
     type = 'application/json'
   ): void {
     response.writeHead(status, {
@@ -115,6 +131,22 @@ export class MiniAppServer {
       )
       return
     }
+    if (
+      request.method === 'GET' &&
+      (path === `${this.base}/workspace` || path === `${this.base}/workspace/`)
+    ) {
+      this.send(
+        response,
+        200,
+        workspacePage(`${this.base}/`),
+        'text/html; charset=utf-8'
+      )
+      return
+    }
+    if (request.method === 'GET' && path === `${this.base}/workspace.css`) {
+      this.send(response, 200, workspaceStyles, 'text/css; charset=utf-8')
+      return
+    }
     if (request.method === 'GET' && path === `${this.base}/style.css`) {
       this.send(response, 200, voiceStyles, 'text/css; charset=utf-8')
       return
@@ -131,8 +163,22 @@ export class MiniAppServer {
     const status =
         path === `${this.base}/api/status` && request.method === 'GET',
       offer = path === `${this.base}/api/offer` && request.method === 'POST',
-      close = path === `${this.base}/api/close` && request.method === 'POST'
-    if (!status && !offer && !close) {
+      close = path === `${this.base}/api/close` && request.method === 'POST',
+      workspace =
+        path === `${this.base}/api/workspace` && request.method === 'GET',
+      workspaceFile =
+        path === `${this.base}/api/workspace/file` && request.method === 'GET',
+      workspaceAction =
+        path === `${this.base}/api/workspace/action` &&
+        request.method === 'POST'
+    if (
+      !status &&
+      !offer &&
+      !close &&
+      !workspace &&
+      !workspaceFile &&
+      !workspaceAction
+    ) {
       this.send(response, 404, JSON.stringify({ error: 'Not found.' }))
       return
     }
@@ -151,6 +197,47 @@ export class MiniAppServer {
         Date.now(),
         close ? this.config.workbench.liveSeconds + 300 : 300
       )
+      if (workspace) {
+        if (!this.backend.workspace)
+          throw new UserError('Workspace is not configured.')
+        const mission =
+          new URL(request.url!, 'http://workspace.invalid').searchParams.get(
+            'mission'
+          ) ?? undefined
+        if (mission && mission.length > 120)
+          throw new UserError('Invalid mission ID.')
+        this.send(
+          response,
+          200,
+          JSON.stringify(this.backend.workspace(owner, mission))
+        )
+        return
+      }
+      if (workspaceFile) {
+        if (!this.backend.workspaceFile)
+          throw new UserError('Workspace file access is not configured.')
+        const query = new URL(request.url!, 'http://workspace.invalid')
+            .searchParams,
+          mission = query.get('mission'),
+          version = query.get('version'),
+          name = query.get('name')
+        if (
+          !mission ||
+          !version ||
+          !name ||
+          mission.length > 120 ||
+          version.length > 120 ||
+          name.length > 200
+        )
+          throw new UserError('Invalid result file request.')
+        const file = this.backend.workspaceFile(owner, mission, version, name)
+        response.setHeader(
+          'Content-Disposition',
+          `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`
+        )
+        this.send(response, 200, Buffer.from(file.data, 'base64'), file.mime)
+        return
+      }
       if (status) {
         this.send(response, 200, JSON.stringify(this.backend.liveStatus(owner)))
         return
@@ -163,7 +250,7 @@ export class MiniAppServer {
         const bytes = Buffer.from(chunk as Uint8Array)
         length += bytes.length
         if (length > 120000)
-          throw new UserError('Voice request exceeds the size limit.')
+          throw new UserError('Mini App request exceeds the size limit.')
         chunks.push(bytes)
       }
       let value: unknown
@@ -174,11 +261,21 @@ export class MiniAppServer {
           )
         )
       } catch {
-        throw new UserError('Invalid voice request JSON.')
+        throw new UserError('Invalid Mini App request JSON.')
       }
       if (!value || typeof value !== 'object' || Array.isArray(value))
-        throw new UserError('Invalid voice request.')
+        throw new UserError('Invalid Mini App request.')
       const body = value as Record<string, unknown>
+      if (workspaceAction) {
+        if (!this.backend.workspaceAction)
+          throw new UserError('Workspace actions are not configured.')
+        this.send(
+          response,
+          200,
+          JSON.stringify(this.backend.workspaceAction(owner, body))
+        )
+        return
+      }
       if (offer) {
         if (
           typeof body.sdp !== 'string' ||
@@ -206,7 +303,7 @@ export class MiniAppServer {
           error:
             error instanceof UserError
               ? error.message
-              : 'Voice provider request failed. Check account access and quota.'
+              : 'Mini App request failed. Reopen from Telegram or ask the operator to check setup.'
         })
       )
     }

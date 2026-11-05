@@ -24,7 +24,11 @@ function setup(
   const edits: string[] = []
   const callbacks: string[] = []
   const keyboards: {
-    inline_keyboard: { text: string; callback_data: string }[][]
+    inline_keyboard: {
+      text: string
+      callback_data?: string
+      web_app?: { url: string }
+    }[][]
   }[] = []
   let errors = 0
   const transport = {
@@ -73,7 +77,11 @@ function setup(
         document?: unknown
         voice?: unknown
         reply_markup?: {
-          inline_keyboard: { text: string; callback_data: string }[][]
+          inline_keyboard: {
+            text: string
+            callback_data?: string
+            web_app?: { url: string }
+          }[][]
         }
       }
     ) => {
@@ -760,10 +768,10 @@ function button(app: ReturnType<typeof setup>, prefix: string): string {
     .findLast(keyboard =>
       keyboard.inline_keyboard
         .flat()
-        .some(item => item.callback_data.startsWith(prefix))
+        .some(item => item.callback_data?.startsWith(prefix))
     )
     ?.inline_keyboard.flat()
-    .find(item => item.callback_data.startsWith(prefix))?.callback_data
+    .find(item => item.callback_data?.startsWith(prefix))?.callback_data
   assert.ok(data, `Missing button ${prefix}`)
   return data
 }
@@ -1312,7 +1320,7 @@ void test('button settings, branches, templates, forwarding and feedback use own
     .at(-1)!
     .inline_keyboard.flat()
     .find(item => item.text === 'editor')!.callback_data
-  await app.bot.handleUpdate(callback(select))
+  await app.bot.handleUpdate(callback(select!))
   await app.bot.handleUpdate(update('/model custom-model'))
   await app.bot.handleUpdate(update('/remember Prefer concise replies'))
   await app.bot.handleUpdate(update('/template save review | Review {{code}}'))
@@ -1988,7 +1996,8 @@ void test('UI localization preserves generated/quoted content and answer languag
   assert.ok(
     keyboard.some(
       item =>
-        item.callback_data.startsWith('response:up:') && item.text !== 'Helpful'
+        item.callback_data?.startsWith('response:up:') &&
+        item.text !== 'Helpful'
     )
   )
   await app.bot.handleUpdate(update('/guide delivery'))
@@ -2595,4 +2604,398 @@ void test('attachment routing tolerates an absent caption value', async () => {
     }
   } as unknown as Update)
   app.bot.stopJobs()
+})
+
+import type { StudioState } from '../../domain/studio.js'
+function studioMission(store: MemoryStateStore, index = 0) {
+  return store.getRecord<StudioState>('studio', '42:42')!.missions[index]!
+}
+void test('autopilot persists reviewed checkpoints, returns local result versions and exposes the same owner workspace', async () => {
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store)
+  await app.bot.handleUpdate(update('/autopilot Prepare a useful report'))
+  assert.equal(app.model.calls.length, 0)
+  let mission = studioMission(store)
+  await app.bot.handleUpdate(callback(button(app, 'studio:')))
+  for (let i = 0; i < 3; i++) await app.bot.tickJobs()
+  mission = studioMission(store)
+  assert.equal(mission.state, 'done')
+  assert.equal(app.model.calls.length, 3)
+  await app.bot.tickJobs()
+  assert.ok(
+    app.replies.some(text => text.includes(`Mission ${mission.id} · done`))
+  )
+  await app.bot.handleUpdate(
+    callback(`studio:${mission.id}:${mission.revision}:show`)
+  )
+  await app.bot.handleUpdate(update(`/result ${mission.id}`))
+  assert.ok(app.replies.at(-1)!.includes('Test answer'))
+  const view = app.bot.workspace('42:42', mission.id)
+  assert.equal(view.detail!.result!.text, 'Test answer')
+  app.bot.workspaceAction('42:42', {
+    action: 'edit',
+    id: mission.id,
+    revision: mission.revision,
+    value: 'Edited report'
+  })
+  assert.equal(
+    app.bot.workspace('42:42', mission.id).detail!.result!.text,
+    'Edited report'
+  )
+  await app.bot.handleUpdate(update('/workspace'))
+  assert.match(app.replies.at(-1)!, /MINI_APP_URL/)
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('research missions exclude private files/notes and preserve clickable evidence through the final brief', async () => {
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store)
+  await app.bot.handleUpdate(update('/remember Private account note'))
+  await app.bot.handleUpdate(documentUpdate('private.pdf', 'Private figures'))
+  app.model.calls = []
+  app.model.options = []
+  app.model.answer = {
+    text: 'Evidence-backed brief [1]',
+    images: [],
+    sources: [
+      { title: 'Primary evidence', url: 'https://example.com/evidence' }
+    ],
+    toolsUsed: { images: 0, searches: 1 }
+  }
+  await app.bot.handleUpdate(update('/investigate Public release changes'))
+  await app.bot.handleUpdate(callback(button(app, 'studio:')))
+  for (let i = 0; i < 3; i++) await app.bot.tickJobs()
+  const mission = studioMission(store)
+  assert.equal(mission.state, 'done')
+  assert.deepEqual(app.model.calls[0]![0]!.documents, [])
+  assert.deepEqual(app.model.options[0]!.memories, [])
+  assert.ok(!JSON.stringify(app.model.calls).includes('Private account note'))
+  await app.bot.handleUpdate(update(`/result ${mission.id}`))
+  assert.match(app.replies.at(-1)!, /https:\/\/example.com\/evidence/)
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('service chains pause on an editable draft and require exact per-service approvals before external continuation', async () => {
+  const store = new MemoryStateStore(),
+    settings = config(),
+    provider = new FakeWorkbench()
+  settings.workbench.connections = [
+    {
+      id: 'mail',
+      owner: 42,
+      title: 'Mail',
+      tools: ['send'],
+      server: 'https://mcp.example.com',
+      authorization: 'secret'
+    }
+  ]
+  const app = setup(undefined, 10, undefined, store, {
+    provider,
+    config: settings
+  })
+  await app.bot.handleUpdate(update('/chain mail | Prepare the reviewed email'))
+  await app.bot.handleUpdate(callback(button(app, 'studio:')))
+  await app.bot.tickJobs()
+  let mission = studioMission(store)
+  assert.equal(mission.state, 'paused')
+  assert.equal(provider.calls.length, 0)
+  await app.bot.handleUpdate(
+    update(
+      `/result edit ${mission.id} | Reviewed body, recipient draft@example.com`
+    )
+  )
+  await app.bot.handleUpdate(update(`/mission resume ${mission.id}`))
+  await app.bot.tickJobs()
+  mission = studioMission(store)
+  assert.equal(mission.state, 'review')
+  assert.equal(
+    provider.calls.filter(call => call.method === 'connection').length,
+    1
+  )
+  await app.bot.handleUpdate(update(`/mission ${mission.id}`))
+  await app.bot.handleUpdate(
+    callback(button(app, 'studio:').replace(':reject:', ':approve:'))
+  )
+  await app.bot.tickJobs()
+  mission = studioMission(store)
+  assert.equal(mission.state, 'done')
+  assert.equal(
+    provider.calls.filter(call => call.method === 'connection').length,
+    2
+  )
+  assert.match(mission.steps[1]!.events[0]!.text, /send/)
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('Inbox capture retains text, links, photos, documents and audio without starting a paid request', async () => {
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store)
+  await app.bot.handleUpdate(update('/inbox on'))
+  await app.bot.handleUpdate(update('Forwarded notes'))
+  await app.bot.handleUpdate(update('https://example.com/article'))
+  await app.bot.handleUpdate(photoUpdate('Reference photo'))
+  await app.bot.handleUpdate(documentUpdate('notes.pdf', 'Reference file'))
+  await app.bot.handleUpdate(voiceUpdate())
+  const audio = {
+    ...voiceUpdate(),
+    message: {
+      ...(voiceUpdate() as Update.MessageUpdate<Message.VoiceMessage>).message,
+      audio: { file_id: 'audio', file_unique_id: 'audio', duration: 60 }
+    }
+  } as Update
+  // Use a standalone audio message rather than a voice/audio union.
+  if ('message' in audio && audio.message && 'voice' in audio.message)
+    Reflect.deleteProperty(audio.message, 'voice')
+  await app.bot.handleUpdate(audio)
+  await app.bot.handleUpdate(documentUpdate('meeting.ogg'))
+  const state = store.getRecord<StudioState>('studio', '42:42')!
+  assert.equal(state.inbox.length, 7)
+  assert.equal(app.model.calls.length, 0)
+  assert.equal(
+    store.getRecord<{ transcriptions: number }>('usage', '42:42')
+      ?.transcriptions ?? 0,
+    0
+  )
+  await app.bot.handleUpdate(update(`/inbox task ${state.inbox[0]!.id}`))
+  await app.bot.handleUpdate(callback(button(app, 'daily:tasks:')))
+  await app.bot.handleUpdate(update('/tasks'))
+  assert.ok(app.replies.join(' ').includes('Forwarded notes'))
+  await app.bot.handleUpdate(update(`/inbox plan ${state.inbox[1]!.id}`))
+  assert.equal(studioMission(store).mode, 'research')
+  await app.bot.handleUpdate(update('/inbox off'))
+  await app.bot.handleUpdate(update('/erase confirm'))
+  assert.equal(store.getRecord('studio', '42:42'), undefined)
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('Inbox recordings enter the existing transcription/protocol review and workspace downloads resolve owned artifacts only', async () => {
+  const store = new MemoryStateStore(),
+    provider = new FakeWorkbench(),
+    settings = config()
+  settings.workbench.miniAppURL = 'https://voice.example.com/voice'
+  const app = setup(undefined, 10, undefined, store, {
+    provider,
+    config: settings
+  })
+  await app.bot.handleUpdate(update('/workspace'))
+  assert.match(app.replies.at(-1)!, /projects, Inbox/)
+  await app.bot.handleUpdate(update('/inbox on'))
+  await app.bot.handleUpdate(voiceUpdate())
+  await app.bot.handleUpdate(update('/inbox off'))
+  const item = store.getRecord<StudioState>('studio', '42:42')!.inbox[0]!
+  mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(
+      new Response(new Uint8Array([79, 103, 103, 83, 0, 1, 2, 3]))
+    )
+  )
+  app.model.answer = JSON.stringify({
+    rows: [{ summary: 'Meeting', task: null, due: null }]
+  })
+  await app.bot.handleUpdate(update(`/inbox meeting ${item.id}`))
+  await app.bot.handleUpdate(callback(button(app, 'provider:meeting:')))
+  assert.equal(
+    provider.calls.filter(call => call.method === 'meeting').length,
+    1
+  )
+  await app.bot.handleUpdate(
+    documentUpdate('data.pdf', '/autopilot Analyze selected data')
+  )
+  await app.bot.handleUpdate(callback(button(app, 'studio:')))
+  for (let i = 0; i < 3; i++) await app.bot.tickJobs()
+  const mission = studioMission(store),
+    version = mission.versions.at(-1)!
+  assert.equal(
+    app.bot.workspaceFile('42:42', mission.id, version.id, 'result.csv').mime,
+    'text/csv'
+  )
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('workspace mutation shares foreground admission and mission cancellation preserves terminal results across reset/import', async () => {
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store)
+  await app.bot.handleUpdate(update('/project new Work'))
+  await app.bot.handleUpdate(update('/autopilot Pending'))
+  await app.bot.handleUpdate(update('/project delete 1'))
+  assert.equal(studioMission(store).state, 'cancelled')
+  await app.bot.handleUpdate(update('/autopilot Reset me'))
+  await app.bot.handleUpdate(update('/reset'))
+  assert.equal(studioMission(store, 1).state, 'cancelled')
+  let finish!: (value: string) => void
+  app.model.reply = () =>
+    new Promise(resolve => {
+      finish = resolve
+    })
+  const pending = app.bot.handleUpdate(update('Hold'))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.throws(
+    () => app.bot.workspaceAction('42:42', { action: 'project', id: 'none' }),
+    /active Telegram/
+  )
+  finish('Done')
+  await pending
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('Inbox forwarding keeps command-like content inert and supports explicit saves from replied material', async () => {
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store)
+  await app.bot.handleUpdate(update('/inbox on'))
+  const forwarded = update(
+    '/erase confirm'
+  ) as Update.MessageUpdate<Message.TextMessage>
+  forwarded.message.forward_origin = {
+    type: 'hidden_user',
+    sender_user_name: 'Source'
+  }
+  await app.bot.handleUpdate(forwarded)
+  assert.equal(
+    store.getRecord<StudioState>('studio', '42:42')!.inbox[0]!.text,
+    '/erase confirm'
+  )
+  await app.bot.handleUpdate(update('/inbox off'))
+  const replied = update(
+    '/inbox save'
+  ) as Update.MessageUpdate<Message.TextMessage>
+  replied.message.reply_to_message = (
+    update('Quoted material') as Update.MessageUpdate<Message.TextMessage>
+  ).message as unknown as NonNullable<Message.TextMessage['reply_to_message']>
+  await app.bot.handleUpdate(replied)
+  assert.equal(
+    store.getRecord<StudioState>('studio', '42:42')!.inbox.at(-1)!.text,
+    'Quoted material'
+  )
+  await app.bot.handleUpdate(
+    documentUpdate('source.pdf', '/inbox save Analyze this')
+  )
+  await app.bot.handleUpdate(update('/inbox process'))
+  assert.equal(studioMission(store).state, 'draft')
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('mission worker rejects unknown owners and suppresses quiet milestone delivery without replaying model work', async () => {
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store)
+  await app.bot.handleUpdate(update('/autopilot Prepare report'))
+  const state = store.getRecord<StudioState>('studio', '42:42')!
+  for (const owner of ['bad', '42:43', '99:99'])
+    store.putRecord('studio', owner, {
+      ...state,
+      missions: state.missions.map(mission => ({ ...mission, state: 'queued' }))
+    })
+  await app.bot.handleUpdate(update('/quiet 00:00-23:59'))
+  await app.bot.handleUpdate(callback(button(app, 'studio:')))
+  for (let i = 0; i < 4; i++) await app.bot.tickJobs()
+  assert.equal(app.model.calls.length, 3)
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('mission and Inbox reply adapters reuse exact replied files and export the frozen context', async () => {
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store)
+  const message = documentUpdate(
+      'reply.pdf'
+    ) as Update.MessageUpdate<Message.DocumentMessage>,
+    request = update(
+      '/autopilot Review the replied document'
+    ) as Update.MessageUpdate<Message.TextMessage>
+  request.message.reply_to_message = message.message as unknown as NonNullable<
+    Message.TextMessage['reply_to_message']
+  >
+  await app.bot.handleUpdate(request)
+  await app.bot.handleUpdate(
+    update(`/mission context ${studioMission(store).id}`)
+  )
+  assert.equal(app.documents.length, 1)
+  const save = update(
+    '/inbox save'
+  ) as Update.MessageUpdate<Message.TextMessage>
+  save.message.reply_to_message = message.message as unknown as NonNullable<
+    Message.TextMessage['reply_to_message']
+  >
+  await app.bot.handleUpdate(save)
+  assert.equal(
+    store.getRecord<StudioState>('studio', '42:42')!.inbox[0]!.documents[0]!
+      .name,
+    'reply.pdf'
+  )
+  await app.bot.handleUpdate(update('/inbox save'))
+  assert.match(app.replies.at(-1)!, /Inbox needs content/)
+  await app.bot.handleUpdate(update('/inbox on'))
+  const audio = {
+    update_id: ++sequence,
+    message: {
+      message_id: sequence,
+      date: 1,
+      from: { id: 42, is_bot: false, first_name: 'User' },
+      chat: { id: 42, type: 'private', first_name: 'User' },
+      caption: 'Meeting notes',
+      audio: { file_id: 'a', file_unique_id: 'a', duration: 60 }
+    }
+  } as Update
+  await app.bot.handleUpdate(audio)
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('mission cancellation bypasses saturated admission while preserving exact owner/revision controls', async () => {
+  const store = new MemoryStateStore(),
+    settings = config()
+  settings.maxConcurrentRequests = 1
+  const model = new FakeModel()
+  model.reply = (_messages, options) =>
+    new Promise((_resolve, reject) =>
+      options!.signal!.addEventListener(
+        'abort',
+        () => reject(new Error('Cancelled provider request')),
+        { once: true }
+      )
+    )
+  const app = setup(model, 1, undefined, store, { config: settings })
+  await app.bot.handleUpdate(update('/autopilot Hold'))
+  await app.bot.handleUpdate(callback(button(app, 'studio:')))
+  const work = app.bot.tickJobs()
+  await new Promise(resolve => setImmediate(resolve))
+  const mission = studioMission(store)
+  assert.equal(mission.state, 'running')
+  await app.bot.handleUpdate(update(`/mission cancel ${mission.id}`))
+  await work
+  assert.equal(studioMission(store).state, 'cancelled')
+  assert.equal(studioMission(store).versions.length, 0)
+  await app.bot.handleUpdate(update('/autopilot Callback cancellation'))
+  const next = studioMission(store, 1)
+  await app.bot.handleUpdate(update('/new Other'))
+  await app.bot.handleUpdate(
+    callback(`studio:${next.id}:${next.revision}:cancel`)
+  )
+  assert.equal(studioMission(store, 1).state, 'draft')
+  await app.bot.handleUpdate(update('/switch 1'))
+  await app.bot.handleUpdate(
+    callback(`studio:${next.id}:${next.revision}:cancel`)
+  )
+  assert.equal(studioMission(store, 1).state, 'cancelled')
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('workspace can cancel an owned mission while a separate foreground request is active', async () => {
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store)
+  await app.bot.handleUpdate(update('/autopilot Cancel from workspace'))
+  const mission = studioMission(store)
+  let finish!: (value: string) => void
+  app.model.reply = () =>
+    new Promise(resolve => {
+      finish = resolve
+    })
+  const pending = app.bot.handleUpdate(update('Foreground'))
+  await new Promise(resolve => setImmediate(resolve))
+  app.bot.workspaceAction('42:42', {
+    action: 'cancel',
+    id: mission.id,
+    revision: mission.revision
+  })
+  assert.equal(studioMission(store).state, 'cancelled')
+  finish('Done')
+  await pending
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
 })

@@ -30,3 +30,7 @@ New workflow tests remain adjacent unit tests. Mock DNS/HTTPS transport and asse
 ## Provider workflow qualification
 
 Provider changes require adjacent unit tests with fake provider/HTTP/media ports and the existing 100% executable-source gate. Do not introduce paid API, native microphone/browser, SQLite/decoder or deployment tests into the unit suite. Operator acceptance and credentials are separate; document unqualified external behavior in [the provider guide](docs/pro-provider.md).
+
+## Studio regression contract
+
+Keep Studio lifecycle, provider execution, HTTP and browser-port tests adjacent and unit-only. Preserve the 100% executable source gate; cover claim-write/result-write failures, restart/cancel races, exact approvals, sparse sources/files, edited-draft continuation, stale model estimates, owner/revision checks and dirty-editor refresh races. UI contract tests use controlled DOM/fetch objects and do not qualify native rendering. [Studio qualification](docs/pro-studio.md) records the external acceptance boundary.

@@ -33,6 +33,12 @@ npm run build
 npm start
 ```
 
+## Pro Studio
+
+Version 9 connects the tools into reviewed work: `/autopilot goal`, `/investigate question`, `/inbox`, `/chain`, durable `/missions`, versioned `/result` outputs and a `/workspace` Mini App. Plans stay inert until approval; chains pause on an editable draft and require exact tool approvals. Interrupted paid attempts stop for review.
+
+Follow [the Studio user paths, recovery rules and setup](docs/pro-studio.md). Workspace hosting reuses the existing public HTTPS Mini App endpoint; account access and external-service acceptance remain separate.
+
 ## Provider workbench
 
 Version 8 adds `/analyze` (Python and downloadable files), `/knowledge` (private project semantic search), `/connections` and `/connect` (reviewed MCP tools), `/meeting` (recording protocols and reviewed tasks), and `/live` (a voice Mini App). Start with `/pro`. All paid provider workflows are explicit; external actions require an additional exact-arguments approval.

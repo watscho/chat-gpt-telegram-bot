@@ -1,3 +1,11 @@
+import { Studio } from '../application/studio.js'
+import { StudioExecutor } from '../application/studio-executor.js'
+import {
+  StudioWorkspace,
+  type WorkspaceView
+} from '../application/studio-workspace.js'
+import { StudioCommands, type StudioContext } from './studio-commands.js'
+import type { InboxItem } from '../domain/studio.js'
 import { Workbench } from '../application/workbench.js'
 import { WorkbenchModel } from '../application/workbench-model.js'
 import { LiveSessions } from '../application/live-sessions.js'
@@ -88,6 +96,14 @@ export function splitReply(text: string, limit = 4000): string[] {
 }
 
 export interface ManagedBot extends Telegraf {
+  workspace(owner: string, missionId?: string): WorkspaceView
+  workspaceAction(owner: string, body: Record<string, unknown>): WorkspaceView
+  workspaceFile(
+    owner: string,
+    missionId: string,
+    version: string,
+    name: string
+  ): Document
   tickJobs(): Promise<void>
   stopJobs(): void
   liveStatus(owner: string): ReturnType<LiveSessions['status']>
@@ -248,7 +264,7 @@ export function createBot({
       available: (owner, thread) =>
         !active.has(owner) &&
         !sessionLocks.has(`${owner}:${thread}`) &&
-        active.size + background < config.maxConcurrentRequests,
+        active.size + background + live.count < config.maxConcurrentRequests,
       input: (owner, thread, prompt) => frozenInput(owner, thread, prompt),
       execute: async (owner, job, signal) => {
         if (
@@ -373,6 +389,73 @@ export function createBot({
     },
     store
   )
+  const studioExecutor = new StudioExecutor(
+    config,
+    model,
+    workbench,
+    usage,
+    workspaces,
+    profiles
+  )
+  const studio = new Studio(
+    config,
+    {
+      allowed: owner => {
+        const parts = owner.split(':')
+        return (
+          parts.length === 2 &&
+          parts[0] === parts[1] &&
+          config.allowedUsers.has(Number(parts[0]))
+        )
+      },
+      available: (owner, thread) =>
+        !active.has(owner) &&
+        !sessionLocks.has(`${owner}:${thread}`) &&
+        active.size + background + live.count < config.maxConcurrentRequests,
+      execute: async (owner, mission, step, signal) => {
+        const session = `${owner}:${mission.thread}`
+        sessionLocks.add(session)
+        background++
+        try {
+          return await studioExecutor.execute(owner, mission, step, signal)
+        } finally {
+          sessionLocks.delete(session)
+          background--
+        }
+      },
+      notify: async (owner, mission) => {
+        if (experience.shouldQueue(owner, workspaces.get(owner).timezone))
+          return
+        await bot.telegram.sendMessage(
+          Number(owner.split(':')[0]),
+          `Mission ${mission.id} · ${mission.state}\n${mission.title}\nConversation ${mission.thread}. /mission ${mission.id} reviews checkpoints and actions; /result ${mission.id} retrieves a completed result.`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text: 'Open mission',
+                    callback_data: `studio:${mission.id}:${mission.revision}:show`
+                  }
+                ]
+              ]
+            }
+          }
+        )
+      }
+    },
+    store
+  )
+  studio.recover()
+  const studioCommands = new StudioCommands(studio, workspaces)
+  const studioWorkspace = new StudioWorkspace(
+    studio,
+    profiles,
+    workspaces,
+    workflow,
+    usage,
+    jobs
+  )
   jobs.recover()
   const flowCommands = new WorkflowCommands(
     workflow,
@@ -480,6 +563,7 @@ export function createBot({
     await workbench.tick()
     live.recover()
     await jobs.tick()
+    await studio.tick()
     await workflow.tick(
       owner => {
         const parts = owner.split(':')
@@ -563,7 +647,17 @@ export function createBot({
     return live.open(owner, profiles.get(owner).active, offer, mode)
   }
   bot.closeLive = (owner, id) => live.close(owner, id)
+  bot.workspace = (owner, missionId) =>
+    studioWorkspace.snapshot(owner, missionId)
+  bot.workspaceAction = (owner, body) => {
+    if (active.has(owner) && body.action !== 'cancel')
+      throw new UserError('Wait for the active Telegram request to finish.')
+    return studioWorkspace.action(owner, body)
+  }
+  bot.workspaceFile = (owner, missionId, version, name) =>
+    studioWorkspace.file(owner, missionId, version, name)
   bot.stopJobs = () => {
+    studio.stop()
     jobs.stop()
     void live.stop().catch(reportError)
   }
@@ -603,7 +697,8 @@ export function createBot({
     if (
       msg &&
       'forward_origin' in msg &&
-      productivity.get(key).collecting[profiles.get(key).active]
+      productivity.get(key).collecting[profiles.get(key).active] &&
+      !studio.collecting(key, profiles.get(key).active)
     ) {
       const thread = profiles.get(key).active
       const content =
@@ -613,6 +708,35 @@ export function createBot({
         ctx,
         'Forwarded text/caption collected; media contents were not downloaded. Use /collect summarize when ready.'
       )
+      return
+    }
+    const missionCancel =
+      msg && 'text' in msg && !('forward_origin' in msg)
+        ? msg.text.match(
+            /^\/mission(?:@\w+)?\s+cancel\s+([a-zA-Z0-9_-]{1,120})$/
+          )
+        : null
+    const cancelControl = callback.match(
+      /^studio:([a-zA-Z0-9_-]{1,120}):(\d+):cancel$/
+    )
+    if (missionCancel || cancelControl) {
+      const mission = studio.mission(key, (missionCancel ?? cancelControl)![1]!)
+      if (cancelControl && mission.thread !== profiles.get(key).active)
+        throw new UserError(
+          'Open the source conversation before using this control.'
+        )
+      studio.control(
+        key,
+        mission.id,
+        cancelControl ? Number(cancelControl[2]) : mission.revision,
+        'cancel'
+      )
+      if (cancelControl) await ctx.answerCbQuery('Mission cancelled.')
+      else
+        await uiReply(
+          ctx,
+          'Mission cancelled. Already-started provider work may still be billed.'
+        )
       return
     }
     if (
@@ -670,6 +794,7 @@ export function createBot({
   })
 
   const help = [
+    '/workspace — project workspace. /inbox — capture without generation. /autopilot — reviewed multi-step work. /investigate — source-backed research. /chain — reviewed service sequence. /missions and /mission — checkpoints. /result — versions, edits and exports.',
     '/pro — provider workbench. /analyze — Python data analysis. /knowledge — cloud semantic library. /connections and /connect — reviewed external actions. /meeting — recording protocol. /live — live voice. /cloud_cleanup — remote resource status.',
     '/today — daily dashboard. /morning — optional local morning overview. /scenarios, /favorite, /run — quick workflows. /notes — reviewed voice tasks. /read — article reader. /continue — project context review. /onboarding — guided setup.',
     '/quiet, /digest and /notifications — delivery controls. /bookmarks and /bookmark — saved passages. /sources — cited evidence cards. /project_budget and /project_usage — project estimates. /output — validated CSV/JSON. /queue, /priority and /defer — queued work. /language — UI and answer preferences.',
@@ -769,6 +894,7 @@ export function createBot({
         experience.deleteThread(owner, profiles.get(owner).active)
         daily.deleteThread(owner, profiles.get(owner).active)
         workbench.deleteThread(owner, profiles.get(owner).active)
+        studio.deleteThread(owner, profiles.get(owner).active)
         conversations.reset(sessionFor(ctx))
         await uiReply(
           ctx,
@@ -813,6 +939,7 @@ export function createBot({
         experience.deleteThread(owner, argument)
         daily.deleteThread(owner, argument)
         workbench.deleteThread(owner, argument)
+        studio.deleteThread(owner, argument)
         conversations.reset(`${owner}:${argument}`)
         await uiReply(ctx, 'Conversation and its history deleted.')
         break
@@ -981,6 +1108,7 @@ export function createBot({
         experience.refresh(owner)
         daily.refresh(owner)
         workbench.refresh(owner)
+        studio.refresh(owner)
         conversations.refresh()
         controls.clear(owner, false)
       }
@@ -1154,6 +1282,118 @@ export function createBot({
       }
     }
   }
+  const inboxInput = (
+    ctx: Context,
+    text: string,
+    images: Image[] = [],
+    documents: Document[] = [],
+    recording = recordingMeta(ctx.message)
+  ): Omit<InboxItem, 'id' | 'kind' | 'createdAt'> => {
+    const owner = ownerFor(ctx),
+      thread = profiles.get(owner).active
+    return {
+      source: String(ctx.message?.message_id),
+      thread,
+      project: workspaces.thread(owner, thread).project,
+      text,
+      images,
+      documents,
+      recording: recording ?? null
+    }
+  }
+  const studioContext = (
+    ctx: Context,
+    images: Image[] = [],
+    documents: Document[] = []
+  ): StudioContext => {
+    const owner = ownerFor(ctx),
+      thread = profiles.get(owner).active,
+      base = workflowContext(ctx)
+    return {
+      owner,
+      thread,
+      text: (value, keyboard) => base.text(value, keyboard),
+      file: (bytes, name) => base.file(bytes, name),
+      input: async prompt => {
+        const replied = await base.document()
+        const input = frozenInput(owner, thread, prompt, images, [
+          ...documents,
+          ...(replied ? [replied] : [])
+        ])
+        input.instructions = [
+          input.instructions,
+          workflow.terms(owner, input.project ?? null),
+          answerPreference(owner, thread)
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+        return input
+      },
+      capture: async text => {
+        const replied = await base.document()
+        const message = ctx.message,
+          reply =
+            message && 'reply_to_message' in message
+              ? message.reply_to_message
+              : undefined
+        return inboxInput(
+          ctx,
+          text || (reply && 'text' in reply ? reply.text : '') || quoted(ctx),
+          images,
+          [...documents, ...(replied ? [replied] : [])],
+          recordingMeta(reply ?? ctx.message)
+        )
+      },
+      task: item =>
+        dailyCommands.taskReview(
+          dailyContext(ctx),
+          JSON.stringify({
+            rows: [
+              {
+                summary: item.text.slice(0, 1000),
+                task: item.text.slice(0, 1000),
+                due: null
+              }
+            ]
+          })
+        ),
+      meeting: async item => {
+        await providerCommands.handle(
+          {
+            ...providerContext(ctx),
+            recording: () => item.recording!
+          },
+          '/meeting'
+        )
+      },
+      workspace: async () => {
+        const url = config.workbench.miniAppURL
+        if (!url) {
+          await uiReply(
+            ctx,
+            'Workspace requires MINI_APP_URL and a public HTTPS proxy. See the operator guide.'
+          )
+          return
+        }
+        await uiReply(
+          ctx,
+          'Open your projects, Inbox, tasks, missions, results and estimates.',
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text: 'Open workspace',
+                    web_app: { url: `${url.replace(/\/$/, '')}/workspace/` }
+                  }
+                ]
+              ]
+            }
+          }
+        )
+      }
+    }
+  }
   const respond = async (
     ctx: Context,
     text: string,
@@ -1162,6 +1402,24 @@ export function createBot({
     voiceInput = false,
     prepared?: PreparedRequest
   ): Promise<void> => {
+    if (!prepared) {
+      if (
+        studio.collecting(ownerFor(ctx), profiles.get(ownerFor(ctx)).active) &&
+        (!text.startsWith('/') ||
+          (ctx.message && 'forward_origin' in ctx.message))
+      ) {
+        const item = studio.capture(
+          ownerFor(ctx),
+          inboxInput(ctx, text, images, documents)
+        )
+        await uiReply(ctx, `Saved to Inbox: ${item.id}. /inbox view ${item.id}`)
+        return
+      }
+      if (
+        await studioCommands.handle(studioContext(ctx, images, documents), text)
+      )
+        return
+    }
     ctx.state.rawUI =
       /^\/(memory|templates|template\s+show|collect\s+show|context\s+show|library\s+find|find)(?:\s|$)/.test(
         text
@@ -1263,6 +1521,7 @@ export function createBot({
           workflow: workflow.get(owner),
           experience: experience.get(owner),
           daily: daily.get(owner),
+          studio: studio.get(owner),
           workbench: workbench.get(owner),
           providerCleanup: workbench.journal.entries(owner)
         }),
@@ -1272,9 +1531,16 @@ export function createBot({
           workflow.erase(owner)
           experience.erase(owner)
           daily.erase(owner)
+          studio.erase(owner)
           workbench.erase(owner)
         },
         deleteProject: (id: string) => {
+          for (const mission of studio.get(owner).missions)
+            if (
+              mission.project === id &&
+              !['done', 'cancelled'].includes(mission.state)
+            )
+              studio.control(owner, mission.id, mission.revision, 'cancel')
           library.deleteProject(owner, id)
           workflow.deleteProject(owner, id)
           if (workbench.get(owner).projects[id]) workbench.clear(owner, id)
@@ -1684,6 +1950,11 @@ export function createBot({
       await ctx.answerCbQuery('Unsupported control.')
       return
     }
+    if (ctx.callbackQuery.data.startsWith('studio:')) {
+      await studioCommands.callback(studioContext(ctx), ctx.callbackQuery.data)
+      await ctx.answerCbQuery()
+      return
+    }
     if (ctx.callbackQuery.data.startsWith('provider:')) {
       const result = await providerCommands.callback(
         providerContext(ctx),
@@ -1881,6 +2152,16 @@ export function createBot({
       return
     }
     if (recordingMeta(ctx.message)) {
+      if (
+        studio.collecting(ownerFor(ctx), profiles.get(ownerFor(ctx)).active)
+      ) {
+        const item = studio.capture(ownerFor(ctx), inboxInput(ctx, ''))
+        await uiReply(
+          ctx,
+          `Recording saved to Inbox: ${item.id}. /inbox meeting ${item.id}`
+        )
+        return
+      }
       await uiReply(
         ctx,
         'Recording received. Reply to it with /meeting or /meeting speakers to review transcription and protocol processing.'
@@ -1918,6 +2199,20 @@ export function createBot({
     await respond(ctx, captions.join('\n'), images, documents)
   })
   bot.on(message('audio'), async ctx => {
+    if (
+      studio.collecting(ownerFor(ctx), profiles.get(ownerFor(ctx)).active) &&
+      !ctx.message.caption?.startsWith('/')
+    ) {
+      const item = studio.capture(
+        ownerFor(ctx),
+        inboxInput(ctx, ctx.message.caption ?? '')
+      )
+      await uiReply(
+        ctx,
+        `Recording saved to Inbox: ${item.id}. /inbox meeting ${item.id}`
+      )
+      return
+    }
     if (/^\/meeting(?:@\w+)?(?:\s|$)/i.test(ctx.message.caption ?? ''))
       await respond(ctx, ctx.message.caption!)
     else
@@ -1927,6 +2222,14 @@ export function createBot({
       )
   })
   bot.on(message('voice'), async ctx => {
+    if (studio.collecting(ownerFor(ctx), profiles.get(ownerFor(ctx)).active)) {
+      const item = studio.capture(ownerFor(ctx), inboxInput(ctx, ''))
+      await uiReply(
+        ctx,
+        `Recording saved to Inbox: ${item.id}. /inbox meeting ${item.id}`
+      )
+      return
+    }
     const voice = ctx.message.voice
     if (
       voice.duration > config.maxVoiceSeconds ||

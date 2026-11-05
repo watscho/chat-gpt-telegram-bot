@@ -99,3 +99,7 @@ Morning views use local state without model calls. The worker persists each deli
 ## Provider workbench boundaries
 
 `WorkbenchModel` routes only explicit prepared workbench requests to `Workbench`; ordinary chat keeps the existing model adapter. `OpenAIWorkbench` implements bounded provider IO. `ResourceJournal` persists minimal cleanup intent independently from owner erasure. `LiveSessions` owns reservations and shutdown deadlines; `MiniAppServer` authenticates Telegram callers, while the injected browser controller owns microphone/RTC lifecycle. See [provider lifecycle and qualification](pro-provider.md).
+
+## Studio orchestration and workspace
+
+The `studio` scoped JSON record contains Inbox items, captured inputs, missions, step claims/receipts and result versions. `Studio` owns pure lifecycle transitions and durable claim-before-effect orchestration; `StudioExecutor` uses existing model/workbench/quota adapters with no hidden chat history. `StudioWorkspace` exposes redacted owner snapshots and validated local actions; `StudioCommands` supplies reviewed Telegram entry points. The Mini App extends the signed shared HTTP boundary, and its browser controller preserves dirty edits and rejects stale revisions. Run one state-file writer. See [the workflow and recovery contract](pro-studio.md).

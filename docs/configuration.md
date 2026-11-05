@@ -144,3 +144,7 @@ See [provider setup](pro-provider.md) for MCP credentials, Mini App HTTPS hostin
 | `ESTIMATE_MEETING_MINUTE_MICRO_USD` | `100000`                | 1..10000000 per rounded minute plus transcription and protocol/chat  |
 
 Knowledge questions reserve the ordinary chat cost plus the configured search estimate. Estimates are conservative operator inputs, not dynamically fetched prices, measured token/tool usage or a provider billing limit.
+
+## Studio configuration
+
+Studio reuses existing models, owner/project budgets, `MAX_JOB_BYTES`, file limits and `MINI_APP_URL`; it adds no credential or model default. Build the workspace browser asset before starting the optional shared Mini App server. [The Studio guide](pro-studio.md) documents fixed item/mission/version bounds, estimate checks and public research isolation.

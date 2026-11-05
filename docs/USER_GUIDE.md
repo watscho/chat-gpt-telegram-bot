@@ -439,3 +439,7 @@ Pending scenario input and task reviews expire after ten minutes. `/scenario_can
 ## Provider workflows
 
 Start with `/pro`. Use `/analyze`, `/knowledge`, `/connect`, `/meeting` or `/live` for reviewed provider work. Follow the [step-by-step user paths and retention guide](pro-provider.md); cloud knowledge is separate from the local library, and meeting tasks require their own confirmation.
+
+## Pro Studio workflows
+
+Use `/autopilot goal` for reviewed staged work, `/investigate question` for public evidence research, `/inbox on` for capture without generation, and `/workspace` for project/task/result navigation. `/chain` pauses on an editable draft before exact service approvals. See [Studio commands, versions and recovery](pro-studio.md).
