@@ -9,7 +9,7 @@ Copy `.env.example` to `.env` for local development, or inject environment varia
 | `TELEGRAM_API_KEY`           | Required                 | Bot token                                                                               |
 | `OPENAI_API_KEY`             | Required                 | OpenAI project key                                                                      |
 | `ALLOWED_TELEGRAM_USER_IDS`  | Required                 | Comma-separated positive safe-integer Telegram IDs; private chats only                  |
-| `OPENAI_CHAT_MODEL`          | Required                 | Responses model supporting images, files, web search and image generation               |
+| `OPENAI_CHAT_MODEL`          | `gpt-6.1-sol`            | Responses model supporting images, files, web search and image generation               |
 | `OPENAI_TRANSCRIPTION_MODEL` | `gpt-4o-mini-transcribe` | Incoming OGG-compatible transcription model                                             |
 | `OPENAI_IMAGE_MODEL`         | `gpt-image-2.5-sunburst` | Image tool model                                                                        |
 | `OPENAI_IMAGE_QUALITY`       | `high`                   | `low`, `medium`, `high`, `auto`                                                         |
@@ -18,6 +18,8 @@ Copy `.env.example` to `.env` for local development, or inject environment varia
 | `OPENAI_SPEECH_VOICE`        | `marin`                  | `alloy`, `ash`, `ballad`, `coral`, `echo`, `sage`, `shimmer`, `verse`, `marin`, `cedar` |
 | `FFMPEG_PATH`                | `ffmpeg`                 | Trusted FFmpeg executable with libopus; no shell interpolation                          |
 | `STATE_DB_PATH`              | `./data/bot.sqlite`      | SQLite file or `:memory:`; use a private writable directory                             |
+
+The default chat model is `gpt-6.1-sol`, selected from [official OpenAI model guidance](https://developers.openai.com/api/docs/guides/latest-model) on 2026-11-05 for its balance of intelligence, speed and cost. Its [model reference](https://developers.openai.com/api/docs/models/gpt-6.1-sol) documents Responses, vision, streaming, web search and image-generation tool support. Missing, empty or whitespace-only `OPENAI_CHAT_MODEL` values use this default; an explicit nonempty value takes precedence. This is a configured model ID, not an automatic latest-model resolver.
 
 Model identifiers are configurable strings. Startup validation checks configuration syntax, not account access or model/tool compatibility. Creative requirements such as transparent backgrounds and composition go in image prompts. Generative edits do not guarantee pixel-exact preservation and there is no mask editor.
 

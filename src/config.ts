@@ -148,7 +148,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxWebSearchCalls: integer('MAX_WEB_SEARCH_CALLS', 3, 10),
     telegramToken: required('TELEGRAM_API_KEY'),
     openaiKey: required('OPENAI_API_KEY'),
-    chatModel: required('OPENAI_CHAT_MODEL'),
+    chatModel: env.OPENAI_CHAT_MODEL?.trim() || 'gpt-6.1-sol',
     transcriptionModel:
       env.OPENAI_TRANSCRIPTION_MODEL?.trim() || 'gpt-4o-mini-transcribe',
     imageModel: env.OPENAI_IMAGE_MODEL?.trim() || 'gpt-image-2.5-sunburst',

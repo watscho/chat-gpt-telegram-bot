@@ -14,7 +14,11 @@ void test('configuration parses defaults and allowlist without global mutation',
   assert.equal(config.maxVoiceBytes, 10000000)
   assert.equal(config.requestTimeoutMs, 60000)
 })
-for (const key of Object.keys(env)) {
+for (const key of [
+  'TELEGRAM_API_KEY',
+  'OPENAI_API_KEY',
+  'ALLOWED_TELEGRAM_USER_IDS'
+]) {
   void test(`configuration requires ${key} without leaking credentials`, () => {
     assert.throws(
       () => loadConfig({ ...env, [key]: '' }),
@@ -72,4 +76,17 @@ void test('all model/path overrides and optional numeric settings are parsed exp
   assert.equal(settings.maxWebSearchCalls, 5)
   assert.throws(() => loadConfig({ ...env, MAX_THREADS: '9007199254740992' }))
   assert.throws(() => loadConfig({}))
+})
+
+void test('chat model defaults when unset or blank and preserves explicit overrides', () => {
+  for (const value of [undefined, '', '   ']) {
+    assert.equal(
+      loadConfig({ ...env, OPENAI_CHAT_MODEL: value }).chatModel,
+      'gpt-6.1-sol'
+    )
+  }
+  assert.equal(
+    loadConfig({ ...env, OPENAI_CHAT_MODEL: ' custom-model ' }).chatModel,
+    'custom-model'
+  )
 })

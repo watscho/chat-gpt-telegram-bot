@@ -20,8 +20,9 @@ Required settings:
 
 - `TELEGRAM_API_KEY`: token from [@BotFather](https://t.me/BotFather).
 - `OPENAI_API_KEY`: private OpenAI project key.
-- `OPENAI_CHAT_MODEL`: a Responses model supporting vision, document inputs, `web_search` and `image_generation`.
 - `ALLOWED_TELEGRAM_USER_IDS`: comma-separated numeric IDs. Only these users in private chats are processed.
+
+Default chat model: `gpt-6.1-sol`. Override it with `OPENAI_CHAT_MODEL` using a Responses model supporting vision, document inputs, `web_search` and `image_generation`. Missing or blank values use the default.
 
 Default image model: `gpt-image-2.5-sunburst`, quality `high`. Default outgoing speech model: `gpt-realtime-2.1-mini`, voice `marin`. Model availability must be checked against your own account. Configuration does not establish provider acceptance.
 

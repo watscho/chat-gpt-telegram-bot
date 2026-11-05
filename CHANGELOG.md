@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.0.1 — Default chat model
+
+- Default `OPENAI_CHAT_MODEL` to `gpt-6.1-sol` when unset, empty or whitespace-only, while preserving explicit overrides.
+- Align environment examples and configuration/setup documentation with current official OpenAI guidance.
+- Cover default and override behavior with unit tests; no live API requests are required.
+
 ## 4.0.0 — Pro workspaces and durable work
 
 - Add UTC daily usage, operator/user limits and conservative estimated-spend reservations for chat, tools, transcription and narration.
