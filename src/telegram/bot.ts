@@ -1,3 +1,11 @@
+import { Productivity } from '../application/productivity.js'
+import { Library } from '../application/library.js'
+import { extractDocumentText } from '../infrastructure/document-text.js'
+import {
+  ProductivityCommands,
+  type ProductivityContext
+} from './productivity-commands.js'
+import type { PreparedRequest } from '../domain/productivity.js'
 import { Telegraf, Input, type Context } from 'telegraf'
 import { message } from 'telegraf/filters'
 import type { Config } from '../config.js'
@@ -33,6 +41,7 @@ export interface BotDependencies {
   downloadDocument?: typeof downloadTelegramDocument
   downloadImage?: typeof downloadTelegramImage
   downloadAudio?: typeof downloadTelegramAudio
+  extractText?: typeof extractDocumentText
   reportError?: () => void
 }
 
@@ -64,6 +73,7 @@ export function createBot({
   downloadDocument = downloadTelegramDocument,
   downloadImage = downloadTelegramImage,
   downloadAudio = downloadTelegramAudio,
+  extractText = extractDocumentText,
   reportError = () => console.error('Telegram update failed')
 }: BotDependencies): ManagedBot {
   const bot = new Telegraf(config.telegramToken, {
@@ -74,6 +84,16 @@ export function createBot({
   const workspaces = new Workspaces(config, store)
   const usage = new UsageLedger(config, workspaces, store)
   const controls = new ResponseControls()
+  const productivity = new Productivity(store)
+  const library = new Library(extractText, store)
+  const advanced = new ProductivityCommands(
+    productivity,
+    library,
+    profiles,
+    workspaces,
+    conversations,
+    config.chatModel
+  )
   const exporter = new HistoryExport(config.maxExportBytes)
   const sessionLocks = new Set<string>()
   let background = 0
@@ -161,6 +181,9 @@ export function createBot({
         let reservation: ReturnType<UsageLedger['reserve']> | undefined
         const options: ReplyOptions = {
           signal,
+          ...(workspaces.thread(owner, job.thread).model
+            ? { chatModel: workspaces.thread(owner, job.thread).model! }
+            : {}),
           documents: job.input.documents,
           memories: [
             ...profiles.get(owner).memories,
@@ -260,6 +283,22 @@ export function createBot({
       ctx.callbackQuery && 'data' in ctx.callbackQuery
         ? ctx.callbackQuery.data
         : ''
+    // Forward collection is synchronous local work and accepts rapid batches even
+    // while a paid foreground request is running. Forwarded commands stay content.
+    if (
+      msg &&
+      'forward_origin' in msg &&
+      productivity.get(key).collecting[profiles.get(key).active]
+    ) {
+      const thread = profiles.get(key).active
+      const content =
+        'text' in msg ? msg.text : 'caption' in msg ? (msg.caption ?? '') : ''
+      productivity.collect(key, thread, msg.message_id, content)
+      await ctx.reply(
+        'Forwarded text/caption collected; media contents were not downloaded. Use /collect summarize when ready.'
+      )
+      return
+    }
     if (
       (msg && 'text' in msg && /^\/stop(?:@\w+)?$/.test(msg.text.trim())) ||
       callback.startsWith('request:stop:')
@@ -315,6 +354,10 @@ export function createBot({
 
   const help = [
     'Send text, voice, photos or documents (PDF, DOCX, XLSX, PPTX, TXT, MD, CSV, JSON). Captions are instructions; reply to a file/photo to select it. Reference albums are supported.',
+    '/settings — button-based model/project/mode/voice/limit controls. /model ID overrides this conversation model.',
+    '/turns, /branch N | title, /revise N | request — preserved dialogue branches. /templates, /template and /run — reusable prompts.',
+    '/library add|list|find|remove and /ask — project-scoped text/PDF retrieval. /collect on|off|show|clear|summarize — forwarded text batches.',
+    '/context on|off or /context request — inspect/exclude context before generation. /feedback — view answer ratings.',
     '/search query — search the web with sources; fresh-fact questions can search automatically.',
     '/image description — generate; /edit instructions — edit images in context. Results arrive as original PNG files.',
     '/new [name] — create and switch conversation; /chats — list; /switch id; /rename name; /delete id.',
@@ -382,6 +425,7 @@ export function createBot({
       case 'reset':
         jobs.cancelThread(owner, profiles.get(owner).active)
         controls.clear(owner, false)
+        productivity.deleteThread(owner, profiles.get(owner).active)
         conversations.reset(sessionFor(ctx))
         await ctx.reply(
           'Conversation cleared, including photos and documents. Saved notes and other conversations are preserved.'
@@ -419,6 +463,7 @@ export function createBot({
         profiles.delete(owner, argument)
         jobs.cancelThread(owner, argument)
         workspaces.deleteThread(owner, argument)
+        productivity.deleteThread(owner, argument)
         conversations.reset(`${owner}:${argument}`)
         await ctx.reply('Conversation and its history deleted.')
         break
@@ -525,14 +570,68 @@ export function createBot({
       )
     }
   }
+  const productivityContext = (ctx: Context): ProductivityContext => {
+    const owner = ownerFor(ctx),
+      thread = profiles.get(owner).active
+    return {
+      owner,
+      thread,
+      text: async (value, keyboard) => {
+        for (const chunk of splitReply(value))
+          await ctx.reply(chunk, keyboard ? { reply_markup: keyboard } : {})
+      },
+      repliedDocument: async () => {
+        const msg = ctx.message
+        return msg && 'reply_to_message' in msg && msg.reply_to_message
+          ? (await readAttachment(ctx, msg.reply_to_message)).document
+          : undefined
+      },
+      prepare: prompt => {
+        const selected = profiles.get(owner).active
+        const input = frozenInput(owner, selected, prompt)
+        // History already carries retained attachments; current/project references are explicit.
+        return {
+          prompt,
+          images: [],
+          documents: workspaces.project(owner, selected)?.documents ?? [],
+          memories: input.memories,
+          instructions: input.instructions,
+          history: conversations.history(`${owner}:${selected}`),
+          references: '',
+          analysisOnly: false
+        }
+      }
+    }
+  }
   const respond = async (
     ctx: Context,
     text: string,
     images: Image[] = [],
     documents: Document[] = [],
-    voiceInput = false
+    voiceInput = false,
+    prepared?: PreparedRequest
   ): Promise<void> => {
-    if (!images.length && !documents.length && (await manage(ctx, text))) return
+    if (!prepared && !images.length && !documents.length) {
+      if (await manage(ctx, text)) return
+      const selected = profiles.get(ownerFor(ctx)).active
+      const result = await advanced.handle(productivityContext(ctx), text)
+      if (profiles.get(ownerFor(ctx)).active !== selected) {
+        if (controls.current(ownerFor(ctx))!.signal.aborted)
+          throw new UserError('Request stopped.')
+        controls.end(ownerFor(ctx))
+        ctx.state.request = controls.begin(
+          ownerFor(ctx),
+          profiles.get(ownerFor(ctx)).active
+        )
+      }
+      if (result === true) return
+      if (result !== false) {
+        prepared = result
+        text = result.prompt
+        images = result.images
+        documents = result.documents
+      }
+    }
     const owner = ownerFor(ctx)
     const thread = profiles.get(owner).active
     const message = ctx.message
@@ -543,6 +642,17 @@ export function createBot({
     const commandContext = {
       owner,
       thread,
+      extras: {
+        data: () => ({
+          productivity: productivity.get(owner),
+          library: library.get(owner)
+        }),
+        erase: () => {
+          productivity.erase(owner)
+          library.erase(owner)
+        },
+        deleteProject: (id: string) => library.deleteProject(owner, id)
+      },
       text: async (value: string) => {
         for (const chunk of splitReply(value)) await ctx.reply(chunk)
       },
@@ -556,9 +666,9 @@ export function createBot({
       input: (prompt: string) =>
         frozenInput(owner, thread, prompt, images, documents)
     }
-    const handled = await pro.handle(commandContext, text)
+    const handled = prepared ? false : await pro.handle(commandContext, text)
     if (handled === true) return
-    const analysisOnly = handled !== false
+    const analysisOnly = prepared?.analysisOnly ?? handled !== false
     if (handled !== false) {
       text = handled.prompt
       images = handled.images
@@ -580,6 +690,7 @@ export function createBot({
     }
     const msg = ctx.message
     if (
+      !prepared &&
       !images.length &&
       !documents.length &&
       msg &&
@@ -591,7 +702,12 @@ export function createBot({
       if (reference.document) documents.push(reference.document)
     }
     const settings = workspaces.thread(owner, thread)
-    if (settings.imageVersion && !images.length && action === 'edit') {
+    if (
+      !prepared &&
+      settings.imageVersion &&
+      !images.length &&
+      action === 'edit'
+    ) {
       const version = conversations
         .versions(sessionFor(ctx))
         .find(item => item.id === settings.imageVersion)
@@ -602,7 +718,10 @@ export function createBot({
       images.push(version.image)
     }
     const project = workspaces.project(owner, thread)
-    const combined = [...(project?.documents ?? []), ...documents]
+    const combined = [
+      ...(prepared ? [] : (project?.documents ?? [])),
+      ...documents
+    ]
     documents = combined.filter(
       (file, index) =>
         !combined
@@ -623,6 +742,25 @@ export function createBot({
       throw new UserError(
         'This conversation has a background request running. Switch conversations or cancel its job.'
       )
+    if (settings.reviewContext && !ctx.state.contextApproved) {
+      await advanced.review(
+        productivityContext(ctx),
+        prepared ?? {
+          prompt: text,
+          images,
+          documents,
+          memories: [
+            ...profiles.get(owner).memories,
+            ...(project?.notes ?? [])
+          ],
+          instructions: workspaces.instructions(owner, thread),
+          history: conversations.history(session),
+          references: '',
+          analysisOnly
+        }
+      )
+      return
+    }
     sessionLocks.add(session)
     const current = controls.current(owner)!
     const signalProgress = () =>
@@ -653,9 +791,20 @@ export function createBot({
         action,
         signal: current.signal,
         ...(command?.[1]?.toLowerCase() === 'search' ? { search: true } : {}),
-        memories: [...profiles.get(owner).memories, ...(project?.notes ?? [])],
+        memories: prepared?.memories ?? [
+          ...profiles.get(owner).memories,
+          ...(project?.notes ?? [])
+        ],
         documents,
-        instructions: workspaces.instructions(owner, thread),
+        instructions:
+          prepared?.instructions ?? workspaces.instructions(owner, thread),
+        ...(prepared
+          ? {
+              contextHistory: prepared.history,
+              references: prepared.references
+            }
+          : {}),
+        ...(settings.model ? { chatModel: settings.model } : {}),
         imageQuality: settings.quality,
         imageSize: settings.size,
         ...(settings.retentionSeconds !== null
@@ -774,6 +923,30 @@ export function createBot({
       await ctx.answerCbQuery('Unsupported control.')
       return
     }
+    if (
+      ctx.callbackQuery.data.startsWith('menu:') ||
+      ctx.callbackQuery.data.startsWith('context:')
+    ) {
+      await ctx.answerCbQuery()
+      const capturedRevision = conversations.history(sessionFor(ctx)).at(-1)?.id
+      const result = await advanced.callback(
+        productivityContext(ctx),
+        ctx.callbackQuery.data
+      )
+      if (result !== true && result !== false) {
+        ctx.state.contextApproved = true
+        ctx.state.responseRevision = { value: capturedRevision }
+        await respond(
+          ctx,
+          result.prompt,
+          result.images,
+          result.documents,
+          false,
+          result
+        )
+      }
+      return
+    }
     const [scope, action, ...rest] = ctx.callbackQuery.data.split(':')
     const owner = ownerFor(ctx)
     const thread = profiles.get(owner).active
@@ -793,6 +966,14 @@ export function createBot({
       await ctx.answerCbQuery('Image setting updated.')
       return
     }
+    if (scope === 'feedback') {
+      const revision = conversations.history(sessionFor(ctx)).at(-1)?.id
+      controls.validate(owner, thread, rest.join(':'), revision)
+      if (!revision) throw new UserError('This answer is no longer retained.')
+      productivity.feedback(owner, thread, revision, 'down', action!)
+      await ctx.answerCbQuery('Feedback saved.')
+      return
+    }
     if (scope !== 'response') {
       await ctx.answerCbQuery('Unknown control.')
       return
@@ -801,6 +982,30 @@ export function createBot({
     const revision = conversations.history(sessionFor(ctx)).at(-1)?.id
     controls.validate(owner, thread, rest.join(':'), revision)
     ctx.state.responseRevision = { value: revision }
+    if (action === 'up' || action === 'down') {
+      if (!revision) throw new UserError('This answer is no longer retained.')
+      if (action === 'down') {
+        await ctx.reply('What should improve?', {
+          reply_markup: {
+            inline_keyboard: [
+              'incorrect',
+              'too_long',
+              'lost_context',
+              'other'
+            ].map(reason => [
+              {
+                text: reason.replace('_', ' '),
+                callback_data: `feedback:${reason}:${rest.join(':')}`
+              }
+            ])
+          }
+        })
+      } else {
+        productivity.feedback(owner, thread, revision, 'up', 'helpful')
+        await ctx.reply('Feedback saved. No provider call was made.')
+      }
+      return
+    }
     if (action === 'speak') {
       await speak(ctx, conversations.lastReply(sessionFor(ctx)) || '')
       return

@@ -2,6 +2,8 @@ import type { Document } from './conversation.js'
 
 export type Mode = 'default' | 'developer' | 'editor' | 'translator' | 'custom'
 export interface ThreadSettings {
+  model?: string | null
+  reviewContext?: boolean
   mode: Mode
   instructions: string
   project: string | null

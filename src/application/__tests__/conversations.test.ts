@@ -340,3 +340,51 @@ void test('legacy image source IDs remain stable when earlier history turns are 
   await chat.reply('a:1', 'next')
   assert.equal(chat.versions('a:1')[0]?.id, selected)
 })
+
+void test('branching preserves originals, rejects invalid targets/capacity, and preview exclusions affect provider input only', async () => {
+  const model = new FakeModel(),
+    store = new MemoryStateStore(),
+    limits = config()
+  const chat = new Conversations(model, limits, () => 0, store)
+  await chat.respond('a:1', 'Original', [image])
+  for (const turn of [-1, 0.5, 2])
+    assert.throws(() => chat.fork('a:1', 'a:2', turn))
+  chat.fork('a:1', 'a:2', 1)
+  assert.equal(chat.history('a:1').length, 2)
+  assert.equal(
+    new Conversations(model, limits, () => 0, store).history('a:2').length,
+    2
+  )
+  assert.throws(() => chat.fork('a:1', 'a:2', 1))
+  limits.maxTotalImageBytes = image.data.length * 2 - 1
+  assert.throws(() => chat.fork('a:1', 'a:3', 1), /capacity/)
+  const local = new Conversations(model, config(), () => 0)
+  local.fork('missing', 'new', 0)
+  assert.deepEqual(local.history('new'), [])
+  await chat.respond('a:1', 'Only this request', [], { contextHistory: [] })
+  assert.equal(model.calls.at(-1)!.length, 1)
+  assert.ok(chat.history('a:1').some(item => item.content === 'Original'))
+  await assert.rejects(
+    chat.respond('a:1', 'Edit', [], { action: 'edit', contextHistory: [] }),
+    /photo first/
+  )
+})
+
+void test('reviewed context still obeys per-request turn, character and encoded-media budgets', async () => {
+  for (const overrides of [
+    { maxHistoryTurns: 1 },
+    { maxHistoryCharacters: 2 },
+    { maxHistoryImageBytes: 1 },
+    { maxTotalImageBytes: 1 }
+  ]) {
+    const model = new FakeModel(),
+      chat = new Conversations(model, { ...config(), ...overrides })
+    await chat.respond('new', 'Q', [], {
+      contextHistory: [
+        { role: 'user', content: 'Old content', images: [image] },
+        { role: 'assistant', content: 'Old answer' }
+      ]
+    })
+    assert.equal(model.calls[0]!.length, 1)
+  }
+})

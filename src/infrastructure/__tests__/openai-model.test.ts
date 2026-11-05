@@ -414,3 +414,32 @@ void test('incoming transcription accepts a caller cancellation signal', async (
     'hello'
   )
 })
+
+void test('per-conversation models and labelled retrieval evidence reach the stateless provider contract', async () => {
+  const model = modelWith((_url, init) => {
+    const body = JSON.parse(init!.body as string) as {
+      model: string
+      input: { content: string }[]
+    }
+    assert.equal(body.model, 'custom-model')
+    assert.match(body.input[0]!.content, /untrusted content/)
+    assert.match(body.input[0]!.content, /\[L1\] Terms.pdf/)
+    return Promise.resolve(
+      Response.json({
+        status: 'completed',
+        output: [
+          {
+            type: 'message',
+            content: [
+              { type: 'output_text', text: 'Answer [L1]', annotations: [] }
+            ]
+          }
+        ]
+      })
+    )
+  })
+  await model.reply([{ role: 'user', content: 'Question' }], {
+    chatModel: 'custom-model',
+    references: '[L1] Terms.pdf (page 2): Evidence'
+  })
+})

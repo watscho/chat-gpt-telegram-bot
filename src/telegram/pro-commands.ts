@@ -12,6 +12,7 @@ import { Jobs } from '../application/jobs.js'
 import type { HistoryExport } from '../infrastructure/history-export.js'
 
 export interface CommandContext {
+  extras?: { data(): unknown; erase(): void; deleteProject(id: string): void }
   owner: string
   thread: string
   text(value: string): Promise<void>
@@ -209,7 +210,8 @@ export class ProCommands {
             workspace: this.workspaces.get(ctx.owner),
             histories: this.conversations.owned(ctx.owner),
             queue: this.jobs.get(ctx.owner),
-            usage: this.usage.get(ctx.owner)
+            usage: this.usage.get(ctx.owner),
+            ...(ctx.extras ? { extensions: ctx.extras.data() } : {})
           }),
           'my-data.json'
         )
@@ -222,6 +224,7 @@ export class ProCommands {
           break
         }
         this.controls.clear(ctx.owner, false)
+        ctx.extras?.erase()
         this.jobs.erase(ctx.owner)
         this.conversations.forgetOwner(ctx.owner)
         this.store?.deleteOwner(ctx.owner)
@@ -371,6 +374,7 @@ export class ProCommands {
     }
     if (action === 'delete') {
       this.workspaces.deleteProject(ctx.owner, value)
+      ctx.extras?.deleteProject(value)
       await ctx.text('Project removed; conversation histories remain.')
       return
     }

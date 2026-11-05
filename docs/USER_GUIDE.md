@@ -211,3 +211,89 @@ Retention is inactivity TTL for the selected conversation, 60..86400 seconds. A 
 `/data` exports your profile, workspace, retained histories, queue/schedules and current-day usage as bounded JSON, including encoded attachments. Large exports can exceed the operator cap; export a single conversation or remove unnecessary retained content first. Treat downloaded exports as private files.
 
 `/erase` explains the action; `/erase confirm` deletes all your local conversation content, attachments, projects, notes, settings, jobs and schedules. Minimal current-day usage aggregates remain to prevent quota bypass; the accounting day rolls over in UTC. A later request starts with fresh settings. This cannot delete existing Telegram messages, provider copies or operator backups. Earlier text may still contain a forgotten note; clear affected histories/jobs too when needed.
+
+## Branches and revised requests
+
+```text
+/turns
+/branch 2 | Alternative approach
+/revise 2 | Use the same inputs, but compare costs instead.
+```
+
+Turn numbers refer to retained user/assistant pairs shown by `/turns`, and can change as old history expires or is trimmed. `/branch N` creates/selects a new conversation through completed turn N. `/revise N` creates/selects a branch through N-1 and sends a replacement request with turn N's original attachments. The original conversation remains intact. Modes, project selection and conversation preferences are copied. This explicit workflow does not automatically rerun requests when you edit a Telegram message.
+
+Branch creation is local; a revision's new answer uses normal quotas. Capacity failures leave the source selected and clean up the new branch. A later provider failure can leave a selected branch containing its retained prefix; retry deliberately. Branches consume normal conversation/history capacity and remain subject to TTL/eviction. They are not permanent backups.
+
+## Project library and cited retrieval
+
+```text
+[reply to a PDF or text document] /library add
+/library list
+/library find renewal notice
+/ask What notice is required for renewal?
+/library remove document-id
+```
+
+Select a project first. Its library is separate from the ten-file inline reference set: it retains extracted text for up to 500 documents across your projects. Indexing and `/library find` are local and make no model call. Adding the same filename replaces that project's indexed version; unchanged content is reused. No original binary is retained by indexing itself, although the original upload may already exist in conversation/project history.
+
+Supported indexing formats: text PDF, UTF-8 TXT, MD, CSV and JSON. Convert Office documents to PDF/text first. Encrypted, scanned or unextractable PDFs require an external text/OCR export. There is no built-in OCR, spreadsheet formula evaluation or layout interpretation. Text extraction quality has unit-contract verification only.
+
+Retrieval ranks lexical matches, returning up to eight passages with `[L#]` labels, filename and PDF page/text line plus passage number. `/ask` supplies matching excerpts as untrusted evidence and requests citations; no match stops before paid work. This is a bounded local search, not semantic embeddings or an exhaustive legal/document comparison. Inspect `/library find` excerpts and original sources when accuracy matters. Normal conversation/project context can also be supplied; use `/context on` to inspect and exclude it.
+
+Limits are 10 MB/input, 500 pages/PDF, one million extracted characters/document and 20 MB stored indexed text/owner. Exceeding a limit rejects the new index without silently truncating it. Removing a project removes its library index; captured context snapshots and previous answers can still contain excerpts until cleared/expired.
+
+## Reusable prompt templates
+
+```text
+/template save review | Review {{code}} for {{focus}}.
+/templates
+/template show review
+/run review {"code":"example()", "focus":"correctness"}
+/template delete review
+```
+
+Names use lowercase letters, digits, underscore or hyphen, starting with a letter; maximum 32 characters. Variables use `{{lowercase_name}}`. Supply exactly the required keys as a JSON object of strings. Unknown/missing/blank values are rejected. Substitution happens once: variable contents cannot introduce another expansion. A template without variables needs only `/run name`.
+
+Templates persist per owner, up to 50 entries and 8000 characters per body/expanded request. Saving/replacing/deleting a template is local; `/run` uses normal answer quotas, project settings and optional context review. Templates are explicit user instructions, not system-policy overrides.
+
+## Forwarded message collections
+
+```text
+/collect on
+[forward several text messages]
+/collect show
+/collect summarize Highlight decisions, owners and deadlines.
+/collect off
+/collect clear
+```
+
+Collection is explicit and scoped to the active conversation. Forwarded text/captions are stored locally without model calls; media contents and sender identities are not collected. Unsupported/empty forwarded media receives an explanatory error. Normal non-forwarded messages continue through the usual chat workflow. Rapid forwarded text/caption batches are collected independently of the foreground busy lock; forwarded commands remain quoted content.
+
+Summarization is a deliberate paid operation that supplies `[F#]` excerpts and requests a summary, decisions/tasks and uncertainty about attribution. Forwarded text is evidence, not trusted instructions. Collection remains available after a summary until explicitly cleared. Limits: 50 entries, 60000 total characters, 8000 characters per entry. Reset/delete clears that conversation's collection and collection mode. History TTL alone does not clear it.
+
+## Button settings and answer feedback
+
+Open `/settings` or `/menu` for model, project, mode, voice, estimated budget/feature presets and context review. Project selection is paginated. Menus expire after ten minutes and cannot be used from another owner/conversation; reopening replaces the previous menu. These actions make no model call. Voice settings remain owner-wide; mode, model, project and review preference are conversation-specific. Budget/count settings remain owner-wide and cannot exceed operator ceilings.
+
+`/model ID` sets a conversation override; `/model default` restores the configured operator model. Availability/compatibility is not tested by spending API credits. Queued jobs use the conversation's model at execution time. Image and speech model configuration remains separate.
+
+Answer buttons include Helpful and Needs improvement. Negative reasons are incorrect, too long, lost context and other. `/feedback` lists ratings for the active conversation. A new vote replaces the previous vote on that answer. Controls require the latest retained answer and reject stale/cross-conversation actions. Feedback stores no separate answer copy, is not sent to OpenAI and is capped at the last 200 entries per owner. Reset/delete clears that conversation's feedback.
+
+## Inspect and exclude context before generation
+
+```text
+/context on
+[send a request]
+/context show 0
+[use Include/Exclude buttons, then Send selected context]
+/context off
+/context Explain the termination clause.
+```
+
+`/context on` stages foreground answers for review; `/context request` creates a one-off preview even when automatic review is off. Local management commands and background-job scheduling retain their normal explicit workflows. A preview is a snapshot of the request, history text, deduplicated current/historical/project attachments, saved notes, instructions and retrieved/forwarded excerpts when present.
+
+The preview itself makes no model call. `/context show ID` displays text or file name/type/size; no binary payloads or credentials are printed. History text and attachments have separate toggles. Excluding a file/image also removes its historical attachment copies from this request. All mode/custom/project instructions are one toggle; retrieved/forwarded excerpts are another. Text that already quotes a file/note can remain in selected history; inspect/exclude history too when needed.
+
+Send consumes the draft once and uses normal quotas; Cancel makes no provider call. Drafts expire after ten minutes, are owner/conversation-bound, and reject a changed history revision. A stopped/failed confirmed request needs a new preview. Another preview replaces the previous one. Snapshot data can remain after a source file/project is removed; cancel it or create a new preview to reflect those changes. Expired snapshots are removed on owner access, without an exact-time erasure guarantee.
+
+Selections apply to this request only. Excluding context does not rewrite stored conversation history or globally delete a note/file. Use the existing clear/delete/erase commands for that purpose. `/data` includes templates, library text, collections, feedback and any current draft; `/erase confirm` removes them along with other owner content.

@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.1.0 — Pro productivity
+
+- Add retained-turn inspection, preserved conversation branches and revised requests with original references and copied preferences.
+- Add owner/project-scoped local text/PDF library indexing, ranked passage search and grounded questions with page/line labels; bounded PDF.js extraction is mocked in unit tests.
+- Add durable named prompt templates with exact JSON variable contracts and bounded single-pass substitution.
+- Add explicit forwarded text/caption collection and deliberate cited summaries with no automatic paid processing.
+- Add paginated settings buttons for conversation models, projects, modes, voice, quota presets and context review; retain operator model defaults.
+- Add answer-bound positive/negative feedback with explicit reasons, replacement votes and bounded local retention.
+- Add expiring single-use context previews, text/metadata inspection and independent exclusion of history, deduplicated attachments, notes, instructions and reference excerpts.
+- Include new records in owner data exports/erasure, conversation reset/deletion and project-library cleanup; document independent retention limits.
+- Preserve adjacent unit-only tests and the unchanged 100% executable line/branch/function coverage gate. No live/native, browser, Docker or costly tests are added.
+
 ## 4.0.1 — Default chat model
 
 - Default `OPENAI_CHAT_MODEL` to `gpt-6.1-sol` when unset, empty or whitespace-only, while preserving explicit overrides.

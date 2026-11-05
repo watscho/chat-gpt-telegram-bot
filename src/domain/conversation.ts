@@ -40,6 +40,9 @@ export interface ReplyOptions {
   enableSearch?: boolean
   maxToolCalls?: number
   retentionSeconds?: number
+  chatModel?: string
+  contextHistory?: Message[]
+  references?: string
   search?: boolean
   memories?: string[]
   documents?: Document[]

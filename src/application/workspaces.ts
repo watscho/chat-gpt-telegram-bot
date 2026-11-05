@@ -81,6 +81,13 @@ export class Workspaces {
       !state.projects.some(project => project.id === thread.project)
     )
       throw new UserError('Project not found. Use /projects.')
+    if (
+      thread.model != null &&
+      !/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,99}$/.test(thread.model)
+    )
+      throw new UserError(
+        'Use a model ID of 1..100 letters, numbers or model separators.'
+      )
     state.threads[id] = thread
     this.save(owner, state)
   }

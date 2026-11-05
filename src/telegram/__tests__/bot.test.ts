@@ -6,6 +6,7 @@ import type { Update, Voice, Message } from 'telegraf/types'
 import { createBot, splitReply, type BotDependencies } from '../bot.js'
 import type { Speech } from '../../domain/speech.js'
 import type { StateStore } from '../../domain/state.js'
+import { Profiles } from '../../application/profiles.js'
 import { Jobs } from '../../application/jobs.js'
 import { config, FakeModel, MemoryStateStore } from '../../__tests__/helpers.js'
 
@@ -1298,4 +1299,222 @@ void test('queued work resolves saved notes at execution rather than retaining f
   await app.bot.handleUpdate(update('/project forget all'))
   await app.bot.tickJobs()
   assert.deepEqual(app.model.options.at(-1)?.memories, [])
+})
+
+void test('button settings, branches, templates, forwarding and feedback use owner-scoped local services', async () => {
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store)
+  await app.bot.handleUpdate(update('/settings'))
+  await app.bot.handleUpdate(
+    callback(button(app, 'menu:').replace(/open:model$/, 'open:mode'))
+  )
+  const select = app.keyboards
+    .at(-1)!
+    .inline_keyboard.flat()
+    .find(item => item.text === 'editor')!.callback_data
+  await app.bot.handleUpdate(callback(select))
+  await app.bot.handleUpdate(update('/model custom-model'))
+  await app.bot.handleUpdate(update('/remember Prefer concise replies'))
+  await app.bot.handleUpdate(update('/template save review | Review {{code}}'))
+  await app.bot.handleUpdate(update('/run review {"code":"example"}'))
+  assert.equal(app.model.calls.at(-1)!.at(-1)!.content, 'Review example')
+  assert.equal(app.model.options.at(-1)!.chatModel, 'custom-model')
+  const token = button(app, 'response:up:').split(':').at(-1)!
+  await app.bot.handleUpdate(callback(`response:up:${token}`))
+  await app.bot.handleUpdate(callback(`response:down:${token}`))
+  await app.bot.handleUpdate(callback(`feedback:incorrect:${token}`))
+  await app.bot.handleUpdate(update('/feedback'))
+  assert.match(app.replies.at(-1)!, /incorrect/)
+  await app.bot.handleUpdate(update('/branch 1'))
+  await app.bot.handleUpdate(update('/switch 1'))
+  await app.bot.handleUpdate(update('/revise 1 | Revised question'))
+  assert.equal(app.model.calls.at(-1)!.at(-1)!.content, 'Revised question')
+  assert.ok(app.replies.some(text => text.includes('Branch 3')))
+  await app.bot.handleUpdate(update('/collect on'))
+  const forwarded = update('Agreed to release Friday')
+  if ('message' in forwarded)
+    Object.assign(forwarded.message, {
+      forward_origin: {
+        type: 'hidden_user',
+        date: 1,
+        sender_user_name: 'Someone'
+      }
+    })
+  await app.bot.handleUpdate(forwarded)
+  const photo = photoUpdate('Caption only')
+  if ('message' in photo)
+    Object.assign(photo.message, {
+      forward_origin: {
+        type: 'hidden_user',
+        date: 1,
+        sender_user_name: 'Someone'
+      }
+    })
+  await app.bot.handleUpdate(photo)
+  const empty = photoUpdate()
+  if ('message' in empty) Object.assign(empty.message, { caption: undefined })
+  if ('message' in empty)
+    Object.assign(empty.message, {
+      forward_origin: {
+        type: 'hidden_user',
+        date: 1,
+        sender_user_name: 'Someone'
+      }
+    })
+  await app.bot.handleUpdate(empty)
+  assert.match(app.replies.at(-1)!, /1..8000/)
+  await app.bot.handleUpdate(update('/collect summarize'))
+  assert.match(app.model.options.at(-1)!.references!, /release Friday/)
+  assert.match(app.model.options.at(-1)!.references!, /Caption only/)
+  assert.equal(app.model.options.at(-1)!.enableImages, false)
+  await app.bot.handleUpdate(update('/data'))
+  await app.bot.handleUpdate(update('/erase confirm'))
+  assert.equal(store.getRecord('productivity', '42:42'), undefined)
+  assert.equal(store.getRecord('library', '42:42'), undefined)
+})
+
+void test('context confirmation sends only selected snapshots and rejects revision races before paid work', async () => {
+  const app = setup()
+  await app.bot.handleUpdate(update('/remember Hidden preference'))
+  await app.bot.handleUpdate(update('Earlier history'))
+  await app.bot.handleUpdate(update('/context on'))
+  await app.bot.handleUpdate(update('Review this request'))
+  assert.equal(app.model.calls.length, 1)
+  const toggle = button(app, 'context:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`context:${toggle}:toggle:0:0`))
+  await app.bot.handleUpdate(callback(`context:${toggle}:toggle:1:0`))
+  await app.bot.handleUpdate(callback(`context:${toggle}:send`))
+  assert.equal(app.model.calls.length, 2)
+  assert.equal(app.model.calls.at(-1)!.length, 1)
+  assert.deepEqual(app.model.options.at(-1)!.memories, [])
+  await app.bot.handleUpdate(callback(`context:${toggle}:send`))
+  assert.equal(app.model.calls.length, 2)
+  await app.bot.handleUpdate(update('/context Inspect without paying'))
+  const cancel = button(app, 'context:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`context:${cancel}:cancel`))
+  await app.bot.handleUpdate(update('/context off'))
+  assert.equal(app.errors(), 0)
+})
+
+void test('library indexing uses an injected parser and grounded questions share normal quota/history controls', async () => {
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store, {
+      extractText: () =>
+        Promise.resolve([
+          { location: 'page 2', text: 'Renewal requires written notice' }
+        ])
+    })
+  await app.bot.handleUpdate(update('/project new Research'))
+  const upload = update('/library add')
+  if ('message' in upload)
+    Object.assign(upload.message, {
+      reply_to_message: {
+        message_id: 77,
+        date: 1,
+        chat: { id: 42, type: 'private' },
+        document: {
+          file_id: 'pdf',
+          file_unique_id: 'pdf',
+          file_name: 'terms.pdf',
+          mime_type: 'application/pdf'
+        }
+      }
+    })
+  await app.bot.handleUpdate(upload)
+  await app.bot.handleUpdate(update('/ask renewal'))
+  assert.match(app.model.options.at(-1)!.references!, /terms.pdf \(page 2/)
+  assert.equal(app.model.calls.length, 1)
+  await app.bot.handleUpdate(update('/context show 0'))
+  await app.bot.handleUpdate(update('/project delete 1'))
+  assert.deepEqual(store.getRecord('library', '42:42'), [])
+})
+
+void test('reviewed image requests preserve explicit action and project context while feedback rejects discarded answers', async () => {
+  const app = setup()
+  await app.bot.handleUpdate(update('/project new Work'))
+  await app.bot.handleUpdate(update('/project remember Scoped note'))
+  await app.bot.handleUpdate(update('/instructions Use references'))
+  await app.bot.handleUpdate(photoUpdate('A source'))
+  await app.bot.handleUpdate(update('/context on'))
+  await app.bot.handleUpdate(update('/edit Add a blue background'))
+  const draft = button(app, 'context:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`context:${draft}:send`))
+  assert.equal(app.model.options.at(-1)!.action, 'edit')
+  assert.deepEqual(app.model.options.at(-1)!.memories, ['Scoped note'])
+  assert.match(app.model.options.at(-1)!.instructions!, /Use references/)
+  const discarded = setup(undefined, 10, undefined, undefined, {
+    config: { ...config(), maxHistoryCharacters: 1 }
+  })
+  await discarded.bot.handleUpdate(update('x'))
+  const token = button(discarded, 'response:up:').split(':').at(-1)!
+  await discarded.bot.handleUpdate(callback(`response:up:${token}`))
+  assert.match(discarded.replies.at(-1)!, /no longer retained/)
+  await discarded.bot.handleUpdate(callback(`feedback:other:${token}`))
+  assert.match(discarded.replies.at(-1)!, /no longer retained/)
+})
+
+void test('library replies without attachment and model overrides in queued jobs remain safe', async () => {
+  const app = setup()
+  await app.bot.handleUpdate(update('/project new Work'))
+  await app.bot.handleUpdate(update('/library add'))
+  assert.match(app.replies.at(-1)!, /Reply to a PDF/)
+  await app.bot.handleUpdate(update('/model custom-model'))
+  await app.bot.handleUpdate(update('/job research Sources'))
+  await app.bot.tickJobs()
+  assert.equal(app.model.options.at(-1)!.chatModel, 'custom-model')
+})
+
+void test('cancellation during branch creation never starts a paid revision', async () => {
+  const app = setup()
+  await app.bot.handleUpdate(update('Original'))
+  const create = Object.getOwnPropertyDescriptor(Profiles.prototype, 'create')!
+    .value as Profiles['create']
+  let stopping: Promise<void> | undefined
+  mock.method(
+    Profiles.prototype,
+    'create',
+    function (this: Profiles, owner: string, title: string) {
+      const result = create.call(this, owner, title)
+      stopping = app.bot.handleUpdate(update('/stop'))
+      return result
+    }
+  )
+  await app.bot.handleUpdate(update('/revise 1 | Replacement'))
+  await stopping
+  assert.equal(app.model.calls.length, 1)
+  assert.ok(app.replies.some(text => text.includes('Request stopped')))
+})
+
+void test('rapid forwarded batches are collected without busy loss and forwarded commands remain quoted content', async () => {
+  const app = setup()
+  await app.bot.handleUpdate(update('/collect on'))
+  const batch = ['First decision', 'Second decision', '/stop'].map(text => {
+    const item = update(text)
+    if ('message' in item)
+      Object.assign(item.message, {
+        forward_origin: {
+          type: 'hidden_user',
+          date: 1,
+          sender_user_name: 'Someone'
+        }
+      })
+    return item
+  })
+  await Promise.all(batch.map(item => app.bot.handleUpdate(item)))
+  const unsupported = voiceUpdate()
+  if ('message' in unsupported)
+    Object.assign(unsupported.message, {
+      forward_origin: {
+        type: 'hidden_user',
+        date: 1,
+        sender_user_name: 'Someone'
+      }
+    })
+  await app.bot.handleUpdate(unsupported)
+  assert.match(app.replies.at(-1)!, /1..8000/)
+  await app.bot.handleUpdate(update('/collect summarize'))
+  assert.match(app.model.options.at(-1)!.references!, /First decision/)
+  assert.match(app.model.options.at(-1)!.references!, /Second decision/)
+  assert.match(app.model.options.at(-1)!.references!, /\/stop/)
+  assert.ok(!app.replies.some(text => text.startsWith('Busy')))
 })

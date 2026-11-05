@@ -126,6 +126,36 @@ export class Conversations {
     this.sessions.set(key, updated)
   }
 
+  fork(source: string, target: string, turns: number): void {
+    const original = this.history(source)
+    if (
+      !Number.isInteger(turns) ||
+      turns < 0 ||
+      turns > original.length / 2 ||
+      this.sessions.has(target)
+    )
+      throw new UserError(
+        'Choose a retained turn and an unused conversation ID.'
+      )
+    const messages = original.slice(0, turns * 2)
+    if (
+      this.sessions.size >= this.limits.maxSessions ||
+      this.totalBytes() + this.imageBytes(messages) >
+        this.limits.maxTotalImageBytes
+    )
+      throw new UserError(
+        'Not enough history capacity for a branch. Remove unused histories first.'
+      )
+    const session = {
+      messages,
+      expiresAt:
+        this.sessions.get(source)?.expiresAt ??
+        this.now() + this.limits.sessionTtlMs
+    }
+    this.store?.putSession(target, session)
+    this.sessions.set(target, structuredClone(session))
+  }
+
   async reply(key: string, input: string): Promise<string> {
     return (await this.respond(key, input)).text
   }
@@ -189,16 +219,31 @@ export class Conversations {
     ) {
       messages.splice(0, 2)
     }
+    const providerMessages =
+      options.contextHistory !== undefined
+        ? [...structuredClone(options.contextHistory), messages.at(-1)!]
+        : messages
+    while (
+      providerMessages.length > 1 &&
+      (providerMessages.length > this.limits.maxHistoryTurns * 2 - 1 ||
+        this.characters(providerMessages) > this.limits.maxHistoryCharacters ||
+        this.imageBytes(providerMessages) >
+          Math.min(
+            this.limits.maxHistoryImageBytes,
+            this.limits.maxTotalImageBytes
+          ))
+    )
+      providerMessages.splice(0, 2)
     if (
       options.action === 'edit' &&
-      !messages.some(message => message.images?.length)
+      !providerMessages.some(message => message.images?.length)
     ) {
       throw new UserError(
         'Send a photo first, or reply to a photo with /edit and your instructions.'
       )
     }
     options.onStart?.()
-    const result = await this.model.reply(messages, options)
+    const result = await this.model.reply(providerMessages, options)
     if (options.signal?.aborted) throw new UserError('Request stopped.')
     const response: ModelReply =
       typeof result === 'string'

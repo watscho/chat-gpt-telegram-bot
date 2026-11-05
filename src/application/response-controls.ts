@@ -78,6 +78,10 @@ export class ResponseControls {
     return {
       inline_keyboard: [
         [
+          { text: 'Helpful', callback_data: `response:up:${token}` },
+          { text: 'Needs improvement', callback_data: `response:down:${token}` }
+        ],
+        [
           { text: 'Retry', callback_data: `response:retry:${token}` },
           { text: 'Shorter', callback_data: `response:shorter:${token}` }
         ],

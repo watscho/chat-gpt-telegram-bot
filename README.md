@@ -89,6 +89,18 @@ Foreground updates are serialized per user. A background job locks its conversat
 
 Text, audio, attached files, saved notes and relevant history are sent to OpenAI for requested processing. Search may send generated queries to search providers. Responses use `store: false`; this does not establish zero retention by OpenAI or Telegram. Requests and raw provider exceptions are not logged. The SQLite file is access-restricted but is **not encrypted at rest** by this application.
 
+## Pro productivity
+
+- Branch or revise retained turns while preserving the original conversation.
+- Search a project library of text/PDF documents locally and ask grounded questions with passage references.
+- Save reusable prompt templates with named variables.
+- Collect forwarded text/captions and summarize only when requested.
+- Configure model, project, mode, voice and local limits through `/settings` buttons.
+- Rate retained answers with explicit feedback reasons.
+- Review/exclude history, files, notes, instructions and retrieved excerpts before sending with `/context`.
+
+See the [productivity workflows and limits](docs/pro-productivity.md) and [full user guide](docs/USER_GUIDE.md). PDF library extraction uses PDF.js; tests mock the parser and do not parse real files or run workers.
+
 ## Pro workspaces and controls
 
 | Workflow                        | Commands or controls                                                                                     |
