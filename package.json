@@ -1,6 +1,6 @@
 {
   "name": "chat-gpt-telegram-bot",
-  "version": "9.0.0",
+  "version": "10.0.0",
   "private": true,
   "description": "A private TypeScript Telegram assistant with projects, streaming, usage controls, documents, image workflows, durable jobs and timezone-aware schedules.",
   "type": "module",
@@ -34,9 +34,11 @@
     "test:unit": "node --experimental-test-module-mocks --import tsx --test 'src/**/__tests__/*.test.ts'"
   },
   "dependencies": {
+    "docx": "9.15.2",
     "openai": "7.50.0",
     "pdfjs-dist": "6.5.438",
     "pdfkit": "0.20.2",
+    "pptxgenjs": "4.0.1",
     "telegraf": "4.16.3"
   },
   "devDependencies": {

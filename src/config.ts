@@ -1,6 +1,9 @@
+import { suiteSettings } from './application/suite-settings.js'
+import type { SuiteConfig } from './domain/suite.js'
 import { workbenchSettings } from './application/workbench-settings.js'
 import type { WorkbenchConfig } from './domain/workbench.js'
 export interface Config {
+  suite: SuiteConfig
   workbench: WorkbenchConfig
   confirmExpensiveRequests: boolean
   streamResponses: boolean
@@ -104,7 +107,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       'Invalid configuration: workbench settings (MINI_APP_URL, OPENAI_MCP_CONNECTIONS or provider limits)'
     )
   }
+  let suite: SuiteConfig
+  try {
+    suite = suiteSettings(env, integer)
+  } catch {
+    throw new ConfigurationError('Invalid configuration: Pro Suite settings')
+  }
   return {
+    suite,
     workbench,
     confirmExpensiveRequests:
       choice('CONFIRM_EXPENSIVE_REQUESTS', ['true', 'false'], 'true') ===

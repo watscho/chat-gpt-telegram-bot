@@ -5,6 +5,9 @@ import {
   type LanguageModel,
   type Message,
   type ModelReply,
+  type Image,
+  type Document,
+  type StructuredSpec,
   type ReplyOptions
 } from '../domain/conversation.js'
 import type { Mission, MissionStep } from '../domain/studio.js'
@@ -31,7 +34,15 @@ export class StudioExecutor {
     owner: string,
     mission: Mission,
     step: MissionStep,
-    signal: AbortSignal
+    signal: AbortSignal,
+    amend?: {
+      model?: string
+      structured?: StructuredSpec
+      images?: Image[]
+      documents?: Document[]
+      references?: string
+      instructions?: string
+    }
   ): Promise<ModelReply> {
     if (
       !this.profiles
@@ -43,9 +54,13 @@ export class StudioExecutor {
       throw new UserError(
         'The source project selection changed. Restore it or create a fresh plan.'
       )
-    if (studioEstimate(this.config, step.kind) !== step.estimate)
+    if (studioEstimate(this.config, step.kind, step.workflow) !== step.estimate)
       throw new UserError(
         'Configured estimate changed. Create and review a fresh mission plan.'
+      )
+    if (step.kind === 'local' || step.kind === 'media')
+      throw new UserError(
+        'Use the Suite asset executor for local or media stages.'
       )
     if (signal.aborted) throw new UserError('Mission cancelled.')
     const previous = mission.steps
@@ -71,20 +86,25 @@ export class StudioExecutor {
     const documents =
       step.kind === 'connection' || step.kind === 'search'
         ? []
-        : mission.input.documents
+        : (amend?.documents ?? mission.input.documents)
     const options: ReplyOptions = {
       signal,
       chatModel:
-        this.ws.thread(owner, mission.thread).model ?? this.config.chatModel,
+        amend?.model ??
+        this.ws.thread(owner, mission.thread).model ??
+        this.config.chatModel,
       documents,
       contextHistory: [],
       summary: '',
       memories: [],
-      references,
+      references: [references, amend?.references].filter(Boolean).join('\n\n'),
+      ...(amend?.structured ? { structured: amend.structured } : {}),
       enableImages: false,
       enableSearch: step.kind === 'search',
       search: step.kind === 'search',
-      instructions: mission.input.instructions
+      instructions: [mission.input.instructions, amend?.instructions]
+        .filter(Boolean)
+        .join('\n\n')
     }
     if (step.kind === 'analysis' || step.kind === 'connection') {
       options.scope = {
@@ -114,7 +134,9 @@ export class StudioExecutor {
         role: 'user',
         content: prompt,
         documents,
-        ...(step.kind === 'compose' ? { images: mission.input.images } : {})
+        ...(step.kind === 'compose'
+          ? { images: amend?.images ?? mission.input.images }
+          : {})
       }
     ]
     const reservation = this.usage.reserve(
@@ -126,7 +148,9 @@ export class StudioExecutor {
         ? this.config.workbench.estimateAnalysis
         : step.kind === 'connection'
           ? this.config.workbench.estimateConnection
-          : 0
+          : step.workflow?.id === 'referee' && step.workflow.phase === 'review'
+            ? this.config.suite.reviewExtra
+            : 0
     )
     options.maxToolCalls = reservation.options.maxToolCalls
     try {

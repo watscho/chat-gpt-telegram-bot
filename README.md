@@ -6,7 +6,7 @@ A private TypeScript Telegram assistant with text and voice conversations, photo
 
 ## Get started
 
-Requirements: Node.js **26.13+ within Node 26**, npm 11, a Telegram bot token, an OpenAI project API key with billing and model access. Outgoing voice messages require **FFmpeg with libopus**; the Docker image includes it. Incoming voice transcription needs no FFmpeg.
+Requirements: Node.js **26.13+ within Node 26**, npm 11, a Telegram bot token, an OpenAI project API key with billing and model access. Outgoing voice messages require **FFmpeg with libopus**; the Docker image includes it. Incoming voice transcription needs no FFmpeg. Recorded-video sampling requires FFmpeg and ffprobe; document/ZIP features use Node 26.13 APIs and the locked document libraries.
 
 ```sh
 nvm use
@@ -32,6 +32,12 @@ For FFmpeg on macOS, install with `brew install ffmpeg`; on Debian/Ubuntu, insta
 npm run build
 npm start
 ```
+
+## Pro Suite
+
+Version 10 adds twenty connected capabilities: local work search and change monitoring; branded DOCX/PPTX/PDF output; travel, learning and rehearsal records; purchase and pre-send reviews; timestamped recorded-video analysis; meeting briefs and content packs; personal quality criteria; annotated screenshots; sourced decisions and commitments; reviewed form filling; bounded ZIP organization; separate shared projects; explicitly priced independent model review; and complete reusable recipes.
+
+Start with `/suite`. Model workflows create inert Studio plans with explicit estimates; record creation and shared publication require an additional content review. `/workspace` includes a Suite section. Follow [the command reference, limits, permissions and recovery guide](docs/pro-suite.md). Recorded video needs trusted FFmpeg and ffprobe executables; native/provider/hosted acceptance remains separate from unit qualification.
 
 ## Pro Studio
 

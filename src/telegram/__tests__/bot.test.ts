@@ -2999,3 +2999,332 @@ void test('workspace can cancel an owned mission while a separate foreground req
   app.bot.stopJobs()
   assert.equal(app.errors(), 0)
 })
+void test('Suite Telegram wiring freezes explicit replied images and text, keeps ZIP local and admits video only after reviewed plans', async () => {
+  const { suiteSetup } = await import('../../__tests__/suite.js'),
+    helper = suiteSetup(),
+    store = new MemoryStateStore(),
+    settings = { ...config(), statePath: '/unit/state.db' },
+    app = setup(undefined, 10, undefined, store, {
+      config: settings,
+      assets: helper.assets
+    })
+  mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(new Response('PK-mocked-archive'))
+  )
+  const replied = (text: string, content: Record<string, unknown>) => {
+    const item = update(text)
+    if ('message' in item)
+      Object.assign(item.message, {
+        reply_to_message: {
+          message_id: 100,
+          date: 1,
+          chat: { id: 42, type: 'private' },
+          from: { id: 43, first_name: 'Other', is_bot: false },
+          ...content
+        }
+      })
+    return item
+  }
+  await app.bot.handleUpdate(
+    replied('/suite decision | Extract decision', {
+      text: 'We chose the smaller launch.'
+    })
+  )
+  assert.equal(
+    studioMission(store).input.sources![0]!.text,
+    'We chose the smaller launch.'
+  )
+  await app.bot.handleUpdate(
+    replied('/suite screen | Explain this screenshot', {
+      photo: [
+        { file_id: 'photo-id', file_unique_id: 'p', width: 200, height: 100 }
+      ]
+    })
+  )
+  assert.equal(studioMission(store, 1).input.images.length, 1)
+  await app.bot.handleUpdate(
+    replied('/suite brand | Report', {
+      document: {
+        file_id: 'doc-id',
+        file_unique_id: 'd',
+        file_name: 'report.pdf',
+        mime_type: 'application/pdf'
+      }
+    })
+  )
+  assert.equal(studioMission(store, 2).input.documents.length, 1)
+  const zip = {
+    file_id: 'zip-id',
+    file_unique_id: 'z',
+    file_name: 'files.zip',
+    mime_type: 'application/zip'
+  }
+  await app.bot.handleUpdate(replied('/suite zip', { document: zip }))
+  assert.match(app.replies.at(-1)!, /Exact byte duplicates/)
+  await app.bot.handleUpdate(
+    replied('/suite zip', {
+      document: { ...zip, file_size: settings.maxDocumentBytes + 1 }
+    })
+  )
+  assert.match(app.replies.at(-1)!, /exceeds/)
+  const message = update(''),
+    video = {
+      file_id: 'video-id',
+      file_unique_id: 'v',
+      width: 200,
+      height: 100,
+      duration: 30,
+      file_size: 100
+    }
+  if ('message' in message) {
+    delete (message.message as unknown as Record<string, unknown>).text
+    Object.assign(message.message, { video })
+  }
+  await app.bot.handleUpdate(message)
+  assert.match(app.replies.at(-1)!, /Video received/)
+  await app.bot.handleUpdate(
+    replied('/suite video 0 no | Summarize this clip', { video })
+  )
+  let mission = studioMission(store, 3)
+  assert.equal(mission.input.video!.seconds, 30)
+  app.bot.workspaceAction('42:42', {
+    action: 'start',
+    id: mission.id,
+    revision: mission.revision
+  })
+  await app.bot.tickJobs()
+  mission = studioMission(store, 3)
+  assert.match(mission.steps[0]!.output!.text, /Sampled clip/)
+  const docVideo = {
+    file_id: 'document-video',
+    file_unique_id: 'dv',
+    file_name: 'movie.mp4',
+    mime_type: 'video/mp4'
+  }
+  await app.bot.handleUpdate(
+    replied('/suite video 1 yes | Review', { document: docVideo })
+  )
+  assert.equal(studioMission(store, 4).input.video!.seconds, null)
+  const captioned = update('')
+  if ('message' in captioned) {
+    delete (captioned.message as unknown as Record<string, unknown>).text
+    Object.assign(captioned.message, {
+      video,
+      caption: '/suite video 0 no | Captioned review'
+    })
+  }
+  await app.bot.handleUpdate(captioned)
+  assert.equal(studioMission(store, 5).input.video!.name, 'recording.mp4')
+  for (const caption of [undefined, '/suite zip']) {
+    const item = update('')
+    if ('message' in item) {
+      delete (item.message as unknown as Record<string, unknown>).text
+      Object.assign(item.message, {
+        document: zip,
+        ...(caption ? { caption } : {})
+      })
+    }
+    await app.bot.handleUpdate(item)
+  }
+  const docCaption = update('')
+  if ('message' in docCaption) {
+    delete (docCaption.message as unknown as Record<string, unknown>).text
+    Object.assign(docCaption.message, {
+      document: docVideo,
+      caption: '/suite video 0 no | Document caption'
+    })
+  }
+  await app.bot.handleUpdate(docCaption)
+  assert.equal(studioMission(store, 6).input.video!.file, docVideo.file_id)
+  await app.bot.handleUpdate(update('/suite video 0 no | Missing video'))
+  assert.match(app.replies.at(-1)!, /Reply to an MP4/)
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('Suite watch ports read pinned public articles and hash owned project files, respect quiet delivery and never invoke a model', async () => {
+  const { Watches } = await import('../../application/watches.js'),
+    { Workspaces } = await import('../../application/workspaces.js'),
+    { suiteSetup } = await import('../../__tests__/suite.js')
+  const store = new MemoryStateStore(),
+    settings = { ...config(), statePath: '/unit/state.db' },
+    helper = suiteSetup(),
+    ws = new Workspaces(settings, store),
+    project = ws.create('42:42', 'Watched project'),
+    file = { name: 'report.txt', mime: 'text/plain', data: 'QQ==' }
+  ws.updateProject('42:42', project.id, 'attach', file)
+  let text = 'Initial public article'
+  const app = setup(undefined, 10, undefined, store, {
+    config: settings,
+    assets: helper.assets,
+    readArticle: value =>
+      Promise.resolve({
+        url: value,
+        title: 'Public article',
+        text,
+        truncated: false
+      })
+  })
+  await app.bot.handleUpdate(update('/suite watch url https://example.com 1'))
+  await app.bot.tickJobs()
+  const watches = new Watches(
+    settings,
+    {
+      allowed: () => true,
+      read: () => Promise.resolve({ title: 'Unused', text: 'Unused' }),
+      notify: () => Promise.resolve()
+    },
+    store
+  )
+  const watch = watches.get('42:42')[0]!
+  text = 'Completely changed public article'
+  await app.bot.handleUpdate(update(`/suite watch check ${watch.id}`))
+  assert.ok(
+    app.replies.some(reply =>
+      reply.startsWith(`Watch ${watch.id}: material changed`)
+    )
+  )
+  await app.bot.handleUpdate(update('/quiet 00:00-23:59'))
+  text = 'Another complete change'
+  await app.bot.handleUpdate(update(`/suite watch check ${watch.id}`))
+  await app.bot.handleUpdate(
+    update(`/suite watch file ${project.id} 1 | ${file.name}`)
+  )
+  await app.bot.tickJobs()
+  const fileWatch = watches
+    .get('42:42')
+    .find(item => item.target.kind === 'file')!
+  assert.match(fileWatch.baseline!.text, /digest/)
+  await app.bot.handleUpdate(update(`/project delete ${project.id}`))
+  await app.bot.handleUpdate(update(`/suite watch check ${fileWatch.id}`))
+  assert.match(app.replies.at(-1)!, /no longer exists/)
+  for (const owner of ['42:43', '42:42:1', '99:99'])
+    watches.add(
+      owner,
+      '1',
+      { kind: 'url', url: `https://example.com/${owner}` },
+      3600000,
+      0
+    )
+  await app.bot.tickJobs()
+  await app.bot.handleUpdate(update('/data'))
+  assert.ok(app.documents.length)
+  await app.bot.handleUpdate(update('/erase confirm'))
+  assert.equal(
+    store.records('watches').some(([owner]) => owner === '42:42'),
+    false
+  )
+  app.bot.stopJobs()
+  assert.equal(app.model.calls.length, 0)
+  assert.equal(app.errors(), 0)
+})
+void test('Suite local ports revalidate source project bindings and handle current, absent and replied document sources', async () => {
+  const { suiteSetup } = await import('../../__tests__/suite.js'),
+    helper = suiteSetup(),
+    store = new MemoryStateStore(),
+    settings = { ...config(), statePath: '/unit/state.db' },
+    app = setup(undefined, 10, undefined, store, {
+      config: settings,
+      assets: helper.assets
+    })
+  await app.bot.handleUpdate(update('/suite brand | Report'))
+  const mission = studioMission(store)
+  app.bot.workspaceAction('42:42', {
+    action: 'start',
+    id: mission.id,
+    revision: mission.revision
+  })
+  await app.bot.handleUpdate(update('/project new Different project'))
+  await app.bot.tickJobs()
+  assert.equal(studioMission(store).state, 'uncertain')
+  assert.equal(app.model.calls.length, 0)
+  await app.bot.handleUpdate(update('/suite zip'))
+  assert.match(app.replies.at(-1)!, /Reply to a ZIP/)
+  const reply = update('/suite brand-template import company')
+  if ('message' in reply)
+    Object.assign(reply.message, {
+      reply_to_message: {
+        message_id: 100,
+        date: 1,
+        chat: { id: 42, type: 'private' },
+        document: { file_id: 'd', file_unique_id: 'u', file_name: 'report.pdf' }
+      }
+    })
+  await app.bot.handleUpdate(reply)
+  assert.match(app.replies.at(-1)!, /Imported palette/)
+  await app.bot.handleUpdate(update('/suite team create | Team'))
+  const teams = app.bot.workspace('42:42').suite!.teams,
+    team = teams[0]!
+  const current = update('')
+  if ('message' in current) {
+    delete (current.message as unknown as Record<string, unknown>).text
+    Object.assign(current.message, {
+      document: { file_id: 'd', file_unique_id: 'u', file_name: 'report.pdf' },
+      caption: `/suite team publish ${team.id}`
+    })
+  }
+  await app.bot.handleUpdate(current)
+  assert.match(app.replies.at(-1)!, /Files: report.pdf/)
+  const unnamed = update('/suite brand-template import missing')
+  if ('message' in unnamed)
+    Object.assign(unnamed.message, {
+      reply_to_message: {
+        message_id: 101,
+        date: 1,
+        chat: { id: 42, type: 'private' },
+        document: { file_id: 'd', file_unique_id: 'u' }
+      }
+    })
+  // The injected downloader deliberately rejects unrecognized document names.
+  await app.bot.handleUpdate(unnamed)
+  await app.bot.handleUpdate(update('/erase confirm'))
+  assert.equal(store.records('teams').length, 0)
+  app.bot.stopJobs()
+})
+void test('Suite video transcription uses the meeting WAV port and preserves the shared estimate ledger', async () => {
+  const { suiteSetup } = await import('../../__tests__/suite.js'),
+    helper = suiteSetup(),
+    store = new MemoryStateStore()
+  helper.assets.video = () =>
+    Promise.resolve({
+      duration: 30,
+      start: 0,
+      seconds: 10,
+      frames: [],
+      audio: Buffer.from('RIFF-unit-audio')
+    })
+  const app = setup(undefined, 10, undefined, store, {
+    provider: helper.provider,
+    assets: helper.assets
+  })
+  mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(new Response('mocked input video'))
+  )
+  const item = update('/suite video 0 yes | Review')
+  if ('message' in item)
+    Object.assign(item.message, {
+      reply_to_message: {
+        message_id: 100,
+        date: 1,
+        chat: { id: 42, type: 'private' },
+        video: {
+          file_id: 'video-id',
+          file_unique_id: 'v',
+          width: 10,
+          height: 10,
+          duration: 30
+        }
+      }
+    })
+  await app.bot.handleUpdate(item)
+  const mission = studioMission(store)
+  app.bot.workspaceAction('42:42', {
+    action: 'start',
+    id: mission.id,
+    revision: mission.revision
+  })
+  await app.bot.tickJobs()
+  const call = helper.provider.calls.find(call => call.method === 'meeting')!
+  assert.match(JSON.stringify(call.value), /audio\/wav/)
+  assert.match(JSON.stringify(call.value), /video-clip.wav/)
+  app.bot.stopJobs()
+})

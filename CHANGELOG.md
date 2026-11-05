@@ -1,5 +1,20 @@
 # Changelog
 
+## 10.0.0 — Pro Suite
+
+- Add a unified `/suite` directory and authenticated workspace navigation for twenty connected capabilities, with frozen materials, explicit plans, configured estimates and retained results.
+- Add owner-only lexical work search with attributed excerpt selection and persistent public-page/project-file change watches with baselines, thresholded diffs and claimed notifications.
+- Add editable brand templates, real DOCX/PPTX/PDF adapters, bounded Markdown tables, preserved reference images and source IDs; template import extracts palette/font/headings without claiming layout replication.
+- Add reviewed travel, continuing-learning, rehearsal, form, decision and commitment records, bounded revision history, explicit missing-field corrections, free preview reopening and separately reviewed reminders.
+- Add purchase comparisons with deterministic minor-unit totals, pre-send reviews, sourced meeting briefs, multi-format content packs and owner/project quality criteria.
+- Add bounded recorded-video frame sampling with timestamps, optional meeting-model WAV transcription and downloadable evidence; add preserved-pixel screenshot SVG annotations with reviewable estimated geometry.
+- Add independent persistent shared projects with targeted expiring invitations, reader/editor roles, explicit publication previews, tasks/files/notes, fresh authorization, revocation, audit and contribution erasure.
+- Add bounded classic ZIP metadata preflight, duplicate-name/capacity/checksum checks, deterministic grouping, exact-content deduplication, reviewed renaming and manifest exports without disk extraction or execution.
+- Add versioned complete workflow recipes with exact variables, fresh source selection and new plan approval; exclude live bindings, provider credentials/continuations and old approvals.
+- Add explicitly different configured model review with a separately visible estimate, source-backed critique and disagreement reporting.
+- Preserve shared quotas, cancellation, claim-before-effect recovery and destination import state; extend exports/erasure and English user/configuration/architecture/security/operations documentation. SQLite remains schema 3; archives remain format 2.
+- Pass 389 adjacent unit tests with 100% executable-source lines, branches and functions, plus type/lint/format/build checks. Document/ZIP/FFmpeg/browser/provider/transport boundaries are mocked; no paid, native, browser, integration or deployment acceptance runs qualify this release.
+
 ## 9.0.0 — Pro Studio
 
 - Add reviewed multi-stage autopilot recipes and public evidence/counter-evidence research with retained sources and explicit uncertainty.

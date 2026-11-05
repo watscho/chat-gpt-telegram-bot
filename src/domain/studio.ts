@@ -1,3 +1,4 @@
+import type { WorkflowSpec } from './suite.js'
 import type { Document, Image, ModelReply } from './conversation.js'
 import type { JobInput } from './jobs.js'
 import type { Recording, ToolApproval } from './workbench.js'
@@ -14,7 +15,8 @@ export interface InboxItem {
   createdAt: number
 }
 export interface MissionStep {
-  kind: 'compose' | 'search' | 'analysis' | 'connection'
+  workflow?: WorkflowSpec
+  kind: 'compose' | 'search' | 'analysis' | 'connection' | 'media' | 'local'
   title: string
   prompt: string
   connection: string | null
@@ -39,7 +41,7 @@ export interface Mission {
   thread: string
   project: string | null
   title: string
-  mode: 'autopilot' | 'research' | 'chain'
+  mode: 'autopilot' | 'research' | 'chain' | 'workflow'
   revision: number
   state:
     | 'draft'

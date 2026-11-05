@@ -148,3 +148,16 @@ Knowledge questions reserve the ordinary chat cost plus the configured search es
 ## Studio configuration
 
 Studio reuses existing models, owner/project budgets, `MAX_JOB_BYTES`, file limits and `MINI_APP_URL`; it adds no credential or model default. Build the workspace browser asset before starting the optional shared Mini App server. [The Studio guide](pro-studio.md) documents fixed item/mission/version bounds, estimate checks and public research isolation.
+
+## Pro Suite
+
+| Variable                          | Default                   | Bounds/meaning                                                                  |
+| --------------------------------- | ------------------------- | ------------------------------------------------------------------------------- |
+| `OPENAI_REVIEW_MODELS`            | `gpt-6.1-sol,gpt-6-astra` | 1..10 unique configured model IDs; reviewer must differ from frozen primary     |
+| `ESTIMATE_REVIEW_EXTRA_MICRO_USD` | `100000`                  | Additional reviewer estimate, up to 100,000,000 micro-USD; not provider billing |
+| `FFPROBE_PATH`                    | `ffprobe`                 | Trusted executable path, at most 512 characters, no NUL/newlines                |
+| `MAX_VIDEO_BYTES`                 | `20000000`                | Positive integer, at most 20 MB                                                 |
+| `MAX_VIDEO_CLIP_SECONDS`          | `120`                     | Positive integer, at most 300 seconds per selected clip                         |
+| `MAX_VIDEO_FRAMES`                | `8`                       | Positive integer, at most ten sampled frames                                    |
+
+Video audio uses `OPENAI_MEETING_MODEL` through the meeting WAV port, without speaker labeling. Video audio estimates add the normal transcription estimate and configured meeting-minute estimate; the plan conservatively quotes the full configured clip duration. Actual transcription reserves the extracted clip duration. Zero model requests are made by local search, watch checks, ZIP organization, template editing or artifact rendering. Native processing is bounded by existing request/image deadlines, document/export limits and the independent owner Studio/Suite byte budgets. Configure a private persistent `STATE_DB_PATH` for watches/shared projects. See [Suite setup and user paths](pro-suite.md).

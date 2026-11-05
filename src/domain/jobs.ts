@@ -1,6 +1,9 @@
+import type { SourceQuote, VideoReference } from './suite.js'
 import type { Document, Image, ModelReply } from './conversation.js'
 
 export interface JobInput {
+  sources?: SourceQuote[]
+  video?: VideoReference
   project?: string | null
   prompt: string
   documents: Document[]

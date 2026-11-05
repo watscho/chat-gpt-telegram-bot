@@ -111,3 +111,11 @@ Before enabling the 8.0 workflows, follow [provider setup and qualification](pro
 ## Operating Pro Studio
 
 Rebuild before restarting the shared voice/workspace Mini App. Run one bot process per state file. Inspect `/missions` after restart: queued untouched steps may continue, while interrupted attempts require external-state inspection and a fresh `/mission retry ID confirm` review. `/mission cancel ID` bypasses saturated admission. Milestone delivery is claimed once and suppressed during quiet/digest windows; users can retrieve results explicitly. Cancel unfinished missions before rollback and protect Studio-containing exports/backups. See [Studio operations and limits](pro-studio.md).
+
+## Pro Suite upgrade
+
+Back up the stopped database before version 10. SQLite remains schema 3; new `suite`, `watches` and global `teams` records use existing generic storage. Source-only unit checks do not establish database migration/durability or hosted acceptance. Roll back with a pre-upgrade backup: older binaries do not expose or erase these scopes.
+
+Use Node 26.13 within Node 26 for the experimental bounded ZIP API. Install trusted FFmpeg/ffprobe for recorded video, keep their paths protected and retain the existing libopus requirement for outgoing voice. Video uses private temporary files, fixed arguments, a file/pipe protocol allowlist, explicit MOV external-reference restrictions, dimensions/frames/bytes/deadlines and cleanup. No native acceptance command is part of CI or this release qualification.
+
+Watch subscriptions perform unauthenticated public HTTPS reads without a model call. Quiet windows suppress their notifications while retaining changes. Shared projects require durable state and allowlisted private identities; back up the global `teams` scope alongside owner records. See [Suite limits, recovery, export/erase/import and qualification boundaries](pro-suite.md).

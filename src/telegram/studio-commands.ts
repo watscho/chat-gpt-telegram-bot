@@ -50,7 +50,7 @@ export class StudioCommands {
     )
     for (const [index, step] of mission.steps.entries()) {
       await ctx.text(
-        `${index + 1}. ${step.title} · ${step.state} · attempt ${step.attempt}\n${step.prompt}\n${step.receipt?.text ?? 'Not attempted.'}\n${step.events.map(event => `${event.state}: ${event.text}`).join('\n')}`
+        `${index + 1}. ${step.title} · ${step.state} · attempt ${step.attempt}\n${step.prompt}\n${step.workflow ? `Workflow: ${step.workflow.id} · ${step.workflow.phase} · model ${step.workflow.model ?? 'local'}\nParameters: ${JSON.stringify(step.workflow.params)}\n` : ''}${step.receipt?.text ?? 'Not attempted.'}\n${step.events.map(event => `${event.state}: ${event.text}`).join('\n')}`
       )
       if (step.approval)
         await ctx.text(
@@ -314,7 +314,22 @@ export class StudioCommands {
       }
       if (action === 'context') {
         await ctx.file(
-          Buffer.from(JSON.stringify(mission.input, null, 2)),
+          Buffer.from(
+            JSON.stringify(
+              {
+                ...mission.input,
+                steps: mission.steps.map(step => ({
+                  kind: step.kind,
+                  title: step.title,
+                  prompt: step.prompt,
+                  estimate: step.estimate,
+                  workflow: step.workflow
+                }))
+              },
+              null,
+              2
+            )
+          ),
           `mission-${mission.id}-context.json`
         )
         return true

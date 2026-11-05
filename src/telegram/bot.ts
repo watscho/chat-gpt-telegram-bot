@@ -1,3 +1,12 @@
+import { suiteMessage, suiteVideo } from './suite-input.js'
+import { SuiteWorkspace } from '../application/suite-workspace.js'
+import { Suite } from '../application/suite.js'
+import { SuiteExecutor } from '../application/suite-executor.js'
+import { suiteSearch } from '../application/suite-search.js'
+import { Watches } from '../application/watches.js'
+import { SharedProjects } from '../application/shared-projects.js'
+import { suiteAssets } from '../infrastructure/suite-assets.js'
+import { SuiteCommands, type SuiteContext } from './suite-commands.js'
 import { Studio } from '../application/studio.js'
 import { StudioExecutor } from '../application/studio-executor.js'
 import {
@@ -77,6 +86,7 @@ export interface BotDependencies {
   downloadAudio?: typeof downloadTelegramAudio
   extractText?: typeof extractDocumentText
   readArticle?: typeof readArticle
+  assets?: import('../domain/suite.js').SuiteAssetPorts
   reportError?: () => void
 }
 
@@ -126,6 +136,7 @@ export function createBot({
   downloadAudio = downloadTelegramAudio,
   extractText = extractDocumentText,
   readArticle: article = readArticle,
+  assets = suiteAssets(config),
   reportError = () => console.error('Telegram update failed')
 }: BotDependencies): ManagedBot {
   const bot = new Telegraf(config.telegramToken, {
@@ -397,6 +408,75 @@ export function createBot({
     workspaces,
     profiles
   )
+  const suite = new Suite(config, store)
+  const teams = new SharedProjects(config, store)
+  const watches = new Watches(
+    config,
+    {
+      allowed: owner =>
+        owner.split(':').length === 2 &&
+        owner.split(':')[0] === owner.split(':')[1] &&
+        config.allowedUsers.has(Number(owner.split(':')[0])),
+      read: async (owner, target, signal) => {
+        if (target.kind === 'url') return article(target.url, signal)
+        const file = workspaces
+          .get(owner)
+          .projects.find(project => project.id === target.project)
+          ?.documents.find(file => file.name === target.name)
+        if (!file) throw new UserError('Watched project file no longer exists.')
+        return {
+          title: file.name,
+          text: JSON.stringify({
+            name: file.name,
+            mime: file.mime,
+            digest: referenceId(file.data)
+          })
+        }
+      },
+      notify: async (owner, watch) => {
+        if (experience.shouldQueue(owner, workspaces.get(owner).timezone))
+          return
+        await bot.telegram.sendMessage(
+          Number(owner.split(':')[0]),
+          `Watch ${watch.id}: material changed. /suite watch show ${watch.id} inspects the retained diff.`
+        )
+      }
+    },
+    store
+  )
+  const suiteExecutor = new SuiteExecutor(
+    config,
+    suite,
+    studioExecutor,
+    assets,
+    usage,
+    async (audio, signal) =>
+      (
+        await workbench
+          .port()
+          .meeting(audio, 'video-clip.wav', 'audio/wav', false, signal)
+      ).text,
+    async (file, signal) =>
+      downloadTelegramFile(
+        await bot.telegram.getFileLink(file),
+        config.suite.videoBytes,
+        config.requestTimeoutMs,
+        fetch,
+        'Video',
+        signal
+      ),
+    (owner, mission) => {
+      if (
+        !profiles
+          .get(owner)
+          .threads.some(thread => thread.id === mission.thread) ||
+        workspaces.thread(owner, mission.thread).project !== mission.project
+      )
+        throw new UserError(
+          'Select the original mission conversation/project or create a fresh plan.'
+        )
+    }
+  )
   const studio = new Studio(
     config,
     {
@@ -417,7 +497,7 @@ export function createBot({
         sessionLocks.add(session)
         background++
         try {
-          return await studioExecutor.execute(owner, mission, step, signal)
+          return await suiteExecutor.execute(owner, mission, step, signal)
         } finally {
           sessionLocks.delete(session)
           background--
@@ -448,13 +528,50 @@ export function createBot({
   )
   studio.recover()
   const studioCommands = new StudioCommands(studio, workspaces)
+  const suiteCommands = new SuiteCommands(
+    config,
+    suite,
+    studio,
+    studioCommands,
+    workspaces,
+    suiteSearch(
+      profiles,
+      workspaces,
+      conversations,
+      library,
+      workflow,
+      experience,
+      studio,
+      suite
+    ),
+    watches,
+    teams,
+    assets,
+    suiteExecutor
+  )
   const studioWorkspace = new StudioWorkspace(
     studio,
     profiles,
     workspaces,
     workflow,
     usage,
-    jobs
+    jobs,
+    new SuiteWorkspace(
+      suite,
+      watches,
+      teams,
+      suiteSearch(
+        profiles,
+        workspaces,
+        conversations,
+        library,
+        workflow,
+        experience,
+        studio,
+        suite
+      ),
+      Boolean(store && config.statePath !== ':memory:')
+    )
   )
   jobs.recover()
   const flowCommands = new WorkflowCommands(
@@ -564,6 +681,7 @@ export function createBot({
     live.recover()
     await jobs.tick()
     await studio.tick()
+    await watches.tick()
     await workflow.tick(
       owner => {
         const parts = owner.split(':')
@@ -658,6 +776,7 @@ export function createBot({
     studioWorkspace.file(owner, missionId, version, name)
   bot.stopJobs = () => {
     studio.stop()
+    watches.stop()
     jobs.stop()
     void live.stop().catch(reportError)
   }
@@ -794,6 +913,7 @@ export function createBot({
   })
 
   const help = [
+    '/suite — search, watches, documents, learning, travel, shared projects and reviewed workflow recipes.',
     '/workspace — project workspace. /inbox — capture without generation. /autopilot — reviewed multi-step work. /investigate — source-backed research. /chain — reviewed service sequence. /missions and /mission — checkpoints. /result — versions, edits and exports.',
     '/pro — provider workbench. /analyze — Python data analysis. /knowledge — cloud semantic library. /connections and /connect — reviewed external actions. /meeting — recording protocol. /live — live voice. /cloud_cleanup — remote resource status.',
     '/today — daily dashboard. /morning — optional local morning overview. /scenarios, /favorite, /run — quick workflows. /notes — reviewed voice tasks. /read — article reader. /continue — project context review. /onboarding — guided setup.',
@@ -894,6 +1014,7 @@ export function createBot({
         experience.deleteThread(owner, profiles.get(owner).active)
         daily.deleteThread(owner, profiles.get(owner).active)
         workbench.deleteThread(owner, profiles.get(owner).active)
+        suite.deleteThread(owner, profiles.get(owner).active)
         studio.deleteThread(owner, profiles.get(owner).active)
         conversations.reset(sessionFor(ctx))
         await uiReply(
@@ -939,6 +1060,7 @@ export function createBot({
         experience.deleteThread(owner, argument)
         daily.deleteThread(owner, argument)
         workbench.deleteThread(owner, argument)
+        suite.deleteThread(owner, argument)
         studio.deleteThread(owner, argument)
         conversations.reset(`${owner}:${argument}`)
         await uiReply(ctx, 'Conversation and its history deleted.')
@@ -1109,6 +1231,8 @@ export function createBot({
         daily.refresh(owner)
         workbench.refresh(owner)
         studio.refresh(owner)
+        suite.refresh(owner)
+        watches.refresh(owner)
         conversations.refresh()
         controls.clear(owner, false)
       }
@@ -1394,6 +1518,74 @@ export function createBot({
       }
     }
   }
+  const suiteContext = (
+    ctx: Context,
+    images: Image[] = [],
+    documents: Document[] = []
+  ): SuiteContext => ({
+    ...studioContext(ctx, images, documents),
+    quote: () => {
+      const message = ctx.message,
+        reply =
+          message && 'reply_to_message' in message
+            ? message.reply_to_message
+            : undefined
+      return reply && 'text' in reply ? reply.text : ''
+    },
+    input: async prompt => {
+      const message = ctx.message,
+        reply =
+          message && 'reply_to_message' in message
+            ? message.reply_to_message
+            : undefined
+      const attachment =
+        reply && !('video' in reply) && !recordingMeta(reply)
+          ? await readAttachment(ctx, reply)
+          : {}
+      const input = frozenInput(
+        ownerFor(ctx),
+        profiles.get(ownerFor(ctx)).active,
+        prompt,
+        [...images, ...(attachment.image ? [attachment.image] : [])],
+        [...documents, ...(attachment.document ? [attachment.document] : [])]
+      )
+      input.instructions += `\n${workflow.terms(ownerFor(ctx), input.project ?? null)}\n${answerPreference(ownerFor(ctx), profiles.get(ownerFor(ctx)).active)}`
+      return input
+    },
+    document: async () => {
+      if (documents[0]) return documents[0]
+      const message = ctx.message,
+        source =
+          message && 'reply_to_message' in message
+            ? message.reply_to_message
+            : message
+      if (!source || !('document' in source)) return undefined
+      const file = source.document
+      if (/\.zip$/i.test(file.file_name ?? '')) {
+        if (
+          file.file_size !== undefined &&
+          file.file_size > config.maxDocumentBytes
+        )
+          throw new UserError('Archive exceeds the configured size limit.')
+        const link = await fileLink(ctx, file.file_id, config.requestTimeoutMs)
+        const bytes = await downloadTelegramFile(
+          link.url,
+          config.maxDocumentBytes,
+          link.remaining,
+          fetch,
+          'Archive',
+          controls.current(ownerFor(ctx))?.signal
+        )
+        return {
+          name: 'archive.zip',
+          mime: 'application/zip',
+          data: Buffer.from(bytes).toString('base64')
+        }
+      }
+      return (await readAttachment(ctx, source)).document
+    },
+    video: () => suiteVideo(suiteMessage(ctx.message))
+  })
   const respond = async (
     ctx: Context,
     text: string,
@@ -1415,6 +1607,10 @@ export function createBot({
         await uiReply(ctx, `Saved to Inbox: ${item.id}. /inbox view ${item.id}`)
         return
       }
+      if (
+        await suiteCommands.handle(suiteContext(ctx, images, documents), text)
+      )
+        return
       if (
         await studioCommands.handle(studioContext(ctx, images, documents), text)
       )
@@ -1521,6 +1717,10 @@ export function createBot({
           workflow: workflow.get(owner),
           experience: experience.get(owner),
           daily: daily.get(owner),
+          suite: suite.get(owner),
+          watches: watches.get(owner),
+          sharedProjects:
+            config.statePath !== ':memory:' && store ? teams.export(owner) : [],
           studio: studio.get(owner),
           workbench: workbench.get(owner),
           providerCleanup: workbench.journal.entries(owner)
@@ -1531,6 +1731,9 @@ export function createBot({
           workflow.erase(owner)
           experience.erase(owner)
           daily.erase(owner)
+          suite.erase(owner)
+          watches.erase(owner)
+          teams.erase(owner)
           studio.erase(owner)
           workbench.erase(owner)
         },
@@ -2143,7 +2346,37 @@ export function createBot({
   bot.on(message('text'), async ctx => {
     await respond(ctx, ctx.message.text)
   })
+  bot.on(message('video'), async ctx => {
+    if (/^\/suite(?:@\w+)?\s+video(?:\s|$)/i.test(ctx.message.caption ?? ''))
+      await respond(ctx, ctx.message.caption!)
+    else
+      await uiReply(
+        ctx,
+        'Video received. Reply with /suite video 0 yes|no | goal to review a bounded clip and optional transcription estimate.'
+      )
+  })
   bot.on([message('photo'), message('document')], async ctx => {
+    if (
+      'document' in ctx.message &&
+      /\.zip$/i.test(ctx.message.document.file_name ?? '')
+    ) {
+      if (/^\/suite(?:@\w+)?\s+zip(?:\s|$)/i.test(ctx.message.caption ?? ''))
+        await respond(ctx, ctx.message.caption!)
+      else
+        await uiReply(
+          ctx,
+          'ZIP received. Reply with /suite zip to inspect names, groups and exact duplicates without executing or extracting entries to disk.'
+        )
+      return
+    }
+    if (
+      'caption' in ctx.message &&
+      /^\/suite(?:@\w+)?\s+video(?:\s|$)/i.test(ctx.message.caption ?? '')
+    ) {
+      await respond(ctx, ctx.message.caption)
+      return
+    }
+
     if (
       'caption' in ctx.message &&
       /^\/meeting(?:@\w+)?(?:\s|$)/i.test(ctx.message.caption ?? '')

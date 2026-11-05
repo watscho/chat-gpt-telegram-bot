@@ -103,3 +103,11 @@ Morning views use local state without model calls. The worker persists each deli
 ## Studio orchestration and workspace
 
 The `studio` scoped JSON record contains Inbox items, captured inputs, missions, step claims/receipts and result versions. `Studio` owns pure lifecycle transitions and durable claim-before-effect orchestration; `StudioExecutor` uses existing model/workbench/quota adapters with no hidden chat history. `StudioWorkspace` exposes redacted owner snapshots and validated local actions; `StudioCommands` supplies reviewed Telegram entry points. The Mini App extends the signed shared HTTP boundary, and its browser controller preserves dirty edits and rejects stale revisions. Run one state-file writer. See [the workflow and recovery contract](pro-studio.md).
+
+## Pro Suite boundaries
+
+`Suite` owns explicit sources, brand templates, quality rules, versioned records/recipes and scoped expiring reviews/listeners. `suite-workflows` compiles a typed catalog; `SuiteExecutor` routes paid stages through `StudioExecutor` and handles separate claimed local/media stages through `SuiteAssetPorts`. Model shape validation, exact quote checks, deterministic offer arithmetic and human record acceptance are distinct operations.
+
+`WorkSearch` recomputes owner-only lexical excerpts; `Watches` persists baselines/diffs and claims notification before transport. `SharedProjects` uses independent global records with fresh member-role/revision checks on every operation; private workspaces are never implicit shared resources. `SuiteWorkspace` exposes redacted authenticated snapshots/local controls; Telegram owns grants, publication and paid-plan reviews.
+
+Artifact ports compose bounded native ZIP APIs, DOCX/PPTX/PDF adapters, preserved-pixel SVG annotations and fixed-argument private-temp video extraction. Unit tests replace external libraries/process/FS/transport ports; no native rendering/decompression/provider/browser acceptance is inferred. See [the acceptance matrix and lifecycle](pro-suite.md).

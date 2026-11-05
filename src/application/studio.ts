@@ -1,3 +1,4 @@
+import type { RecipeStep, WorkflowSpec } from '../domain/suite.js'
 import { randomUUID } from 'node:crypto'
 import type { Config } from '../config.js'
 import { UserError, type ModelReply } from '../domain/conversation.js'
@@ -15,10 +16,21 @@ import { sourceList } from './sources.js'
 const id = () => randomUUID().slice(0, 12)
 export function studioEstimate(
   config: Config,
-  kind: MissionStep['kind']
+  kind: MissionStep['kind'],
+  workflow?: WorkflowSpec
 ): number {
+  if (kind === 'local') return 0
+  if (kind === 'media')
+    return (
+      config.estimateTranscription +
+      Math.ceil(config.suite.videoSeconds / 60) *
+        config.workbench.estimateMeetingMinute
+    )
   return (
     config.estimateChat +
+    (workflow?.id === 'referee' && workflow.phase === 'review'
+      ? config.suite.reviewExtra
+      : 0) +
     (kind === 'search'
       ? config.estimateSearch * config.maxWebSearchCalls
       : kind === 'analysis'
@@ -160,7 +172,8 @@ export class Studio {
     thread: string,
     mode: Mission['mode'],
     input: JobInput,
-    chain: { connection: string; prompt: string }[] = []
+    chain: { connection: string; prompt: string }[] = [],
+    custom: RecipeStep[] = []
   ): Mission {
     if (!this.store || this.config.statePath === ':memory:')
       throw new UserError(
@@ -194,7 +207,43 @@ export class Studio {
         'Mission limit reached (20). Delete old missions first.'
       )
     let steps: MissionStep[]
-    if (mode === 'chain') {
+    if (mode === 'workflow') {
+      if (
+        !custom.length ||
+        custom.length > 10 ||
+        custom.some(
+          step =>
+            ![
+              'compose',
+              'search',
+              'analysis',
+              'connection',
+              'media',
+              'local'
+            ].includes(step.kind) ||
+            !step.title.trim() ||
+            step.title.length > 100 ||
+            !step.prompt.trim() ||
+            step.prompt.length > 2000 ||
+            ((step.kind === 'media' || step.kind === 'local') &&
+              !step.workflow) ||
+            (step.kind === 'connection' &&
+              !this.config.workbench.connections.some(
+                connection =>
+                  connection.owner === Number(owner.split(':')[0]) &&
+                  connection.id === step.connection
+              ))
+        )
+      )
+        throw new UserError(
+          'Workflow recipe steps or connections exceed the supported scope.'
+        )
+      steps = custom.map(spec => ({
+        ...this.step(spec.kind, spec.title, spec.prompt, spec.connection),
+        ...(spec.workflow ? { workflow: structuredClone(spec.workflow) } : {}),
+        estimate: studioEstimate(this.config, spec.kind, spec.workflow)
+      }))
+    } else if (mode === 'chain') {
       if (
         !chain.length ||
         chain.length > 4 ||
@@ -666,13 +715,19 @@ export class Studio {
           'Revise a completed mission with 1..2000 instruction characters within the version/step limits.'
         )
       this.result(owner, missionId)
-      mission.steps.push(
-        this.step(
-          mission.steps[0]!.kind === 'analysis' ? 'analysis' : 'compose',
-          'Revise selected result',
-          instructions
+      const final = mission.steps.at(-1)!,
+        kind = mission.steps[0]!.kind === 'analysis' ? 'analysis' : 'compose'
+      mission.steps.push({
+        ...this.step(kind, 'Revise selected result', instructions),
+        ...(final.workflow && final.kind === 'compose'
+          ? { workflow: structuredClone(final.workflow) }
+          : {}),
+        estimate: studioEstimate(
+          this.config,
+          kind,
+          final.kind === 'compose' ? final.workflow : undefined
         )
-      )
+      })
       mission.state = 'draft'
       mission.expiresAt = this.now() + 600000
     })

@@ -160,7 +160,14 @@ export function mountWorkspace(
     selectOptions(thread, snapshot.threads, snapshot.thread)
     usage.textContent = `${snapshot.usage.requests} requests today · estimated $${(snapshot.usage.estimatedMicroUsd / 1000000).toFixed(2)}`
     nav.replaceChildren()
-    for (const name of ['Missions', 'Inbox', 'Tasks', 'Files', 'Jobs']) {
+    for (const name of [
+      'Missions',
+      'Inbox',
+      'Tasks',
+      'Files',
+      'Jobs',
+      ...(snapshot.suite ? ['Suite'] : [])
+    ]) {
       const element = button(nav, name, () => {
         section = name
         render(snapshot)
@@ -228,6 +235,84 @@ export function mountWorkspace(
           job.id,
           `${job.state} · conversation ${job.thread}\nTelegram: /job ${job.id}`
         )
+    if (section === 'Suite' && snapshot.suite) {
+      const suite = snapshot.suite
+      const search = article(
+        'Search your retained work',
+        'Keyword search over your own retained conversations, indexed files, tasks and records. Selected excerpts are sent only with a reviewed workflow plan.'
+      )
+      const input = document.createElement('input')
+      input.setAttribute('aria-label', 'Search retained work')
+      search.append(input)
+      button(search, 'Search', () => {
+        void act({ action: 'suite:search', id: '', value: input.value })
+      })
+      button(search, 'Clear selected sources', () => {
+        void act({ action: 'suite:clear', id: '' })
+      })
+      for (const hit of suite.hits) {
+        const node = article(hit.title, `${hit.kind}\n${hit.excerpt}`)
+        button(node, 'Select source', () => {
+          void act({ action: 'suite:select', id: hit.id })
+        })
+      }
+      article(
+        'Selected sources',
+        suite.selected.map(source => source.title).join('\n') ||
+          'None selected. Telegram: /suite lists workflow commands.'
+      )
+      for (const record of suite.records) {
+        const node = article(
+          `${record.kind}: ${record.title}`,
+          `Revision ${record.revision} · conversation ${record.thread}\n${record.rows
+            .map(row =>
+              Object.entries(row)
+                .map(([key, value]) => `${key}: ${value ?? '(missing)'}`)
+                .join('\n')
+            )
+            .join('\n\n')}\nTelegram: /suite record ${record.id}`
+        )
+        button(node, 'Delete record', () => {
+          if (window.confirm('Delete this record and retained revisions?'))
+            void act({ action: 'suite:delete', id: record.id, confirm: true })
+        })
+      }
+      for (const watch of suite.watches) {
+        const node = article(
+          `Watch ${watch.id}`,
+          `${JSON.stringify(watch.target)}\n${watch.error}\n${watch.changes.map(change => change.diff).join('\n')}\nTelegram: /suite watch show ${watch.id}`
+        )
+        button(node, watch.enabled ? 'Disable watch' : 'Enable watch', () => {
+          void act({
+            action: 'suite:watch',
+            id: watch.id,
+            value: !watch.enabled
+          })
+        })
+      }
+      for (const team of suite.teams) {
+        const node = article(
+          `Shared: ${team.title}`,
+          `Your role: ${team.role}\n${team.members.map(member => `${member.owner}: ${member.role}`).join('\n')}\n${team.notes.map(note => note.text).join('\n')}\n${team.tasks.map(task => `${task.done ? 'Done' : 'Open'}: ${task.title}`).join('\n')}\nTelegram: /suite team show ${team.id}. Access is rechecked on every request.`
+        )
+        for (const file of team.files)
+          button(node, `Download ${file.name}`, () => {
+            void download(`team:${team.id}`, file.id, file.name)
+          })
+      }
+      for (const template of suite.templates)
+        article(
+          `Template: ${template.name}`,
+          `${template.brand} · ${template.font} · #${template.accent}\n/suite brand ${template.name} docx | goal`
+        )
+      for (const criterion of suite.criteria)
+        article(`Criterion: ${criterion.label}`, criterion.check)
+      for (const recipe of suite.recipes)
+        article(
+          `Recipe: ${recipe.name}`,
+          `Revision ${recipe.revision}\n${recipe.goal}\n${recipe.steps.map(step => step.title).join('\n')}\n/suite recipe run ${recipe.name}`
+        )
+    }
     if (!list.childElementCount)
       article(
         'Nothing here yet',

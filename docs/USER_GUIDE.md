@@ -443,3 +443,7 @@ Start with `/pro`. Use `/analyze`, `/knowledge`, `/connect`, `/meeting` or `/liv
 ## Pro Studio workflows
 
 Use `/autopilot goal` for reviewed staged work, `/investigate question` for public evidence research, `/inbox on` for capture without generation, and `/workspace` for project/task/result navigation. `/chain` pauses on an editable draft before exact service approvals. See [Studio commands, versions and recovery](pro-studio.md).
+
+## Pro Suite
+
+Run `/suite` for twenty connected workflows and `/workspace` for the authenticated Suite navigation. Start with local `/suite search QUERY`, explicitly select source IDs, then prepare a reviewed workflow plan. Records and shared publication have separate content confirmations. See [all commands, examples, limits, continuing sessions and recovery](pro-suite.md).
