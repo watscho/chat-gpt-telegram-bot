@@ -120,3 +120,27 @@ No new environment variables or dependencies are added. Owner commands persist g
 Morning overviews use `/timezone`, quiet hours and worker ticks, with three attempts per local day and 60-second backoff; no model request is needed. Article requests use a fixed ten-second combined lookup/request deadline, three redirects, a 1 MB response cap, 80-character minimum readable text and 20,000-character excerpt cap. HTTPS/public DNS/TLS validation and uncompressed UTF-8 HTML/plain text are required. Normal configured document/input/history limits can impose smaller effective limits. The reader never executes JavaScript or restores inaccessible content. See [daily workflow limits](pro-daily.md).
 
 Schema 3/archive format 2 remain unchanged. `/data` includes private daily state for inspection/backup; archive import preserves destination daily state and ignores source daily settings/tokens, preventing unsolicited morning delivery. Deploy the full compiled `dist` tree and locale resources as before.
+
+## Provider workbench settings
+
+See [provider setup](pro-provider.md) for MCP credentials, Mini App HTTPS hosting, model access and cleanup. All new settings and their defaults appear in `.env.example`. Analysis/meeting/live model IDs are independent from the ordinary chat/transcription models.
+
+| Setting                             | Default                 | Bound or meaning                                                     |
+| ----------------------------------- | ----------------------- | -------------------------------------------------------------------- |
+| `OPENAI_ANALYSIS_MODEL`             | `gpt-6-astra`           | Code Interpreter model; account access required                      |
+| `OPENAI_MEETING_MODEL`              | `gpt-transcribe`        | JSON recorded-audio transcription                                    |
+| `OPENAI_DIARIZATION_MODEL`          | empty                   | Explicit optional legacy speaker-label model; see deprecation note   |
+| `OPENAI_LIVE_MODEL`                 | `gpt-realtime-2.1-mini` | Realtime WebRTC call model                                           |
+| `MINI_APP_URL`                      | empty                   | Public HTTPS origin/path, no credentials/query/fragment              |
+| `MINI_APP_PORT`                     | `8787`                  | 1..65535, binds `127.0.0.1`                                          |
+| `LIVE_MAX_SECONDS`                  | `180`                   | 1..600, cleanup deadline rather than guaranteed billing cap          |
+| `MAX_MEETING_BYTES`                 | `20000000`              | 1..20000000                                                          |
+| `MAX_MEETING_SECONDS`               | `1800`                  | 1..7200 metadata bound and unknown-duration estimate                 |
+| `OPENAI_MCP_CONNECTIONS`            | `[]`                    | Up to 20 owner-scoped authenticated endpoint configurations          |
+| `ESTIMATE_ANALYSIS_MICRO_USD`       | `1000000`               | 1..100000000, in addition to ordinary chat reservation               |
+| `ESTIMATE_INDEX_MICRO_USD`          | `100000`                | 1..10000000, in addition to ordinary chat reservation                |
+| `ESTIMATE_CONNECTION_MICRO_USD`     | `100000`                | 1..10000000 per approved provider continuation plus chat             |
+| `ESTIMATE_LIVE_MINUTE_MICRO_USD`    | `500000`                | 1..10000000; full duration rounded up to minutes plus ordinary voice |
+| `ESTIMATE_MEETING_MINUTE_MICRO_USD` | `100000`                | 1..10000000 per rounded minute plus transcription and protocol/chat  |
+
+Knowledge questions reserve the ordinary chat cost plus the configured search estimate. Estimates are conservative operator inputs, not dynamically fetched prices, measured token/tool usage or a provider billing limit.

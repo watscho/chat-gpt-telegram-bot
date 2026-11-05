@@ -2342,3 +2342,257 @@ void test('image-specific actions retain the selected photo and preserve cost re
   assert.equal(app.model.options.at(-1)!.action, 'edit')
   assert.ok(app.model.calls.at(-1)!.at(-1)!.images!.length)
 })
+
+import { FakeWorkbench } from '../../__tests__/workbench.js'
+void test('provider analysis retains output files only after mandatory context review and reuses shared quota and erasure', async () => {
+  const provider = new FakeWorkbench(),
+    store = new MemoryStateStore(),
+    settings = config()
+  const app = setup(undefined, 10, undefined, store, {
+    provider,
+    config: settings
+  })
+  await app.bot.handleUpdate(documentUpdate('data.pdf', '/analyze totals'))
+  assert.equal(provider.calls.length, 0)
+  const token = button(app, 'context:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`context:${token}:send`))
+  assert.ok(provider.calls.some(call => call.method === 'analysis'))
+  assert.equal(app.documents.length, 1)
+  assert.equal(app.model.calls.length, 0)
+  await app.bot.handleUpdate(update('/data'))
+  assert.equal(app.documents.length, 2)
+  await app.bot.handleUpdate(update('/erase confirm'))
+  await app.bot.tickJobs()
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('cloud knowledge and reviewed external tools run through real bot handlers without automatic actions', async () => {
+  const provider = new FakeWorkbench(),
+    store = new MemoryStateStore(),
+    settings = config()
+  settings.workbench.connections = [
+    {
+      id: 'mail',
+      owner: 42,
+      title: 'Mail',
+      tools: ['search'],
+      server: 'https://mcp.example.com',
+      authorization: 'private'
+    }
+  ]
+  const app = setup(undefined, 10, undefined, store, {
+    provider,
+    config: settings
+  })
+  await app.bot.handleUpdate(update('/project new Work'))
+  await app.bot.handleUpdate(documentUpdate('notes.pdf', '/knowledge add'))
+  let token = button(app, 'context:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`context:${token}:send`))
+  await app.bot.handleUpdate(update('/knowledge status'))
+  const file = provider.calls.find(call => call.method === 'attach')!.value as {
+    file: string
+  }
+  provider.hits = [
+    { file: file.file, name: 'notes.pdf', text: 'Reviewed evidence', score: 1 }
+  ]
+  await app.bot.handleUpdate(update('/knowledge ask What was decided?'))
+  token = button(app, 'context:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`context:${token}:send`))
+  assert.ok(provider.calls.some(call => call.method === 'grounded'))
+  await app.bot.handleUpdate(update('/connect mail | Find draft'))
+  token = button(app, 'context:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`context:${token}:send`))
+  assert.equal(
+    provider.calls.filter(call => call.method === 'connection').length,
+    1
+  )
+  const approval = button(app, 'provider:approve:')
+  await app.bot.handleUpdate(callback(approval))
+  await app.bot.handleUpdate(callback(approval))
+  assert.equal(
+    provider.calls.filter(call => call.method === 'connection').length,
+    2
+  )
+  await app.bot.handleUpdate(update('/knowledge clear confirm'))
+  await app.bot.tickJobs()
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('recordings require explicit processing and return transcript plus reviewed protocol while live voice reserves a scoped session', async () => {
+  const provider = new FakeWorkbench(),
+    store = new MemoryStateStore(),
+    settings = config()
+  settings.workbench.miniAppURL = 'https://voice.example.com/voice'
+  const app = setup(undefined, 10, undefined, store, {
+    provider,
+    config: settings
+  })
+  await app.bot.handleUpdate(update('/live'))
+  assert.equal(app.bot.liveStatus('42:42').enabled, true)
+  const call = await app.bot.openLive('42:42', 'v=0', 'interview')
+  await assert.rejects(app.bot.openLive('42:42', 'v=0', 'language'))
+  await app.bot.closeLive('42:42', call.id)
+  const audio = {
+    update_id: ++sequence,
+    message: {
+      message_id: sequence,
+      date: 1,
+      from: { id: 42, is_bot: false, first_name: 'User' },
+      chat: { id: 42, type: 'private', first_name: 'User' },
+      audio: {
+        file_id: 'audio',
+        file_unique_id: 'audio',
+        file_name: 'meeting.ogg',
+        duration: 60,
+        file_size: 10,
+        mime_type: 'audio/ogg'
+      }
+    }
+  } as Update
+  await app.bot.handleUpdate(audio)
+  assert.equal(
+    provider.calls.filter(call => call.method === 'meeting').length,
+    0
+  )
+  mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(
+      new Response(new Uint8Array([79, 103, 103, 83, 0, 1, 2, 3]))
+    )
+  )
+  const recording = {
+    ...audio,
+    message: {
+      ...('message' in audio ? audio.message : {}),
+      caption: '/meeting'
+    }
+  } as Update
+  app.model.answer = JSON.stringify([
+    { summary: 'Review draft', task: 'Review draft', due: null }
+  ])
+  await app.bot.handleUpdate(recording)
+  await app.bot.handleUpdate(callback(button(app, 'provider:meeting:')))
+  assert.equal(
+    provider.calls.filter(call => call.method === 'meeting').length,
+    1
+  )
+  assert.ok(app.documents.length >= 1)
+  await app.bot.handleUpdate(update('/erase confirm'))
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('streamed provider reviews, replied files and project deletion preserve explicit approval and cleanup', async () => {
+  const provider = new FakeWorkbench(),
+    store = new MemoryStateStore(),
+    settings = config()
+  settings.streamResponses = true
+  settings.workbench.miniAppURL = 'https://voice.example.com'
+  settings.workbench.connections = [
+    {
+      id: 'mail',
+      owner: 42,
+      title: 'Mail',
+      tools: ['search'],
+      server: 'https://mcp.example.com',
+      authorization: 'private'
+    }
+  ]
+  const app = setup(undefined, 10, undefined, store, {
+    provider,
+    config: settings
+  })
+  await app.bot.handleUpdate(update('/project new Work'))
+  const replied = update(
+    '/knowledge add'
+  ) as Update.MessageUpdate<Message.TextMessage>
+  replied.message.reply_to_message = (
+    documentUpdate('ref.pdf') as Update.MessageUpdate<Message.DocumentMessage>
+  ).message as unknown as NonNullable<Message.TextMessage['reply_to_message']>
+  await app.bot.handleUpdate(replied)
+  let token = button(app, 'context:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`context:${token}:send`))
+  await app.bot.handleUpdate(update('/project delete 1'))
+  await app.bot.handleUpdate(update('/connect mail | Find draft'))
+  token = button(app, 'context:').split(':')[1]!
+  app.transport.failEdits = 1
+  await app.bot.handleUpdate(callback(`context:${token}:send`))
+  await app.bot.handleUpdate(callback(button(app, 'provider:reject:')))
+  const call = await app.bot.openLive('42:42', 'v=0', 'conversation')
+  provider.failure = 'remove'
+  await app.bot.handleUpdate(update('/erase confirm'))
+  assert.ok(
+    provider.calls.some(
+      item =>
+        item.method === 'remove' &&
+        (item.value as { id: string }).id === call.id
+    )
+  )
+  provider.failure = ''
+  await app.bot.tickJobs()
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('meeting documents and replied audio reserve unknown duration and never retry a failed transcription', async () => {
+  const provider = new FakeWorkbench(),
+    store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store, { provider })
+  const recording = documentUpdate('meeting.ogg')
+  await app.bot.handleUpdate(recording)
+  mock.method(globalThis, 'fetch', () =>
+    Promise.resolve(
+      new Response(new Uint8Array([79, 103, 103, 83, 0, 1, 2, 3]))
+    )
+  )
+  const replied = update(
+    '/meeting'
+  ) as Update.MessageUpdate<Message.TextMessage>
+  replied.message.reply_to_message = (
+    recording as Update.MessageUpdate<Message.DocumentMessage>
+  ).message as unknown as NonNullable<Message.TextMessage['reply_to_message']>
+  provider.failure = 'meeting'
+  await app.bot.handleUpdate(replied)
+  await app.bot.handleUpdate(callback(button(app, 'provider:meeting:')))
+  assert.equal(
+    provider.calls.filter(item => item.method === 'meeting').length,
+    1
+  )
+  provider.failure = ''
+  await app.bot.handleUpdate(documentUpdate('meeting.ogg', '/meeting'))
+  assert.match(app.replies.at(-1)!, /unknown/)
+  app.bot.stopJobs()
+})
+void test('live opening shares foreground and global concurrency admission', async () => {
+  const provider = new FakeWorkbench(),
+    store = new MemoryStateStore(),
+    settings = config()
+  settings.workbench.miniAppURL = 'https://voice.example.com'
+  settings.maxConcurrentRequests = 1
+  const model = new FakeModel()
+  let resolve!: (value: string) => void
+  model.reply = () =>
+    new Promise(done => {
+      resolve = done
+    })
+  const app = setup(model, 1, undefined, store, { provider, config: settings }),
+    pending = app.bot.handleUpdate(update('Hold'))
+  await new Promise(done => setImmediate(done))
+  await assert.rejects(app.bot.openLive('42:42', 'v=0', 'conversation'), /busy/)
+  await assert.rejects(app.bot.openLive('43:43', 'v=0', 'conversation'), /busy/)
+  resolve('Done')
+  await pending
+  app.bot.stopJobs()
+})
+void test('attachment routing tolerates an absent caption value', async () => {
+  const app = setup()
+  await app.bot.handleUpdate({
+    ...documentUpdate('ref.pdf'),
+    message: {
+      ...(
+        documentUpdate(
+          'ref.pdf'
+        ) as Update.MessageUpdate<Message.DocumentMessage>
+      ).message,
+      caption: undefined
+    }
+  } as unknown as Update)
+  app.bot.stopJobs()
+})

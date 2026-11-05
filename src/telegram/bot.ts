@@ -1,3 +1,14 @@
+import { Workbench } from '../application/workbench.js'
+import { WorkbenchModel } from '../application/workbench-model.js'
+import { LiveSessions } from '../application/live-sessions.js'
+import {
+  WorkbenchCommands,
+  type WorkbenchContext
+} from './workbench-commands.js'
+import type { ProviderWorkbench } from '../domain/workbench.js'
+import { recordingMeta } from './recordings.js'
+import { meetingAudio } from '../infrastructure/meeting-audio.js'
+import { downloadTelegramFile } from '../infrastructure/telegram-file.js'
 import { Daily } from '../application/daily.js'
 import { DailyCommands, type DailyContext } from './daily-commands.js'
 import { readArticle } from '../infrastructure/article-reader.js'
@@ -49,6 +60,7 @@ import { downloadTelegramAudio } from '../infrastructure/telegram-audio.js'
 
 export interface BotDependencies {
   config: Config
+  provider?: ProviderWorkbench
   model: LanguageModel
   speech?: Speech
   store?: StateStore
@@ -78,11 +90,19 @@ export function splitReply(text: string, limit = 4000): string[] {
 export interface ManagedBot extends Telegraf {
   tickJobs(): Promise<void>
   stopJobs(): void
+  liveStatus(owner: string): ReturnType<LiveSessions['status']>
+  openLive(
+    owner: string,
+    offer: string,
+    mode: string
+  ): ReturnType<LiveSessions['open']>
+  closeLive(owner: string, id: string): Promise<void>
 }
 
 export function createBot({
   config,
   model,
+  provider,
   speech,
   store,
   downloadDocument = downloadTelegramDocument,
@@ -95,10 +115,29 @@ export function createBot({
   const bot = new Telegraf(config.telegramToken, {
     handlerTimeout: config.imageTimeoutMs + config.requestTimeoutMs * 4 + 30000
   }) as ManagedBot
-  const conversations = new Conversations(model, config, Date.now, store)
   const profiles = new Profiles(config, store)
   const workspaces = new Workspaces(config, store)
   const usage = new UsageLedger(config, workspaces, store)
+  const workbench = new Workbench(config, workspaces, provider, store)
+  const live = new LiveSessions(
+    config,
+    provider,
+    workbench.journal,
+    usage,
+    workspaces
+  )
+  const conversations = new Conversations(
+    new WorkbenchModel(model, workbench),
+    config,
+    Date.now,
+    store
+  )
+  const providerCommands = new WorkbenchCommands(
+    workbench,
+    workspaces,
+    conversations,
+    config
+  )
   const controls = new ResponseControls()
   const productivity = new Productivity(store)
   const workflow = new Workflow(store)
@@ -114,11 +153,13 @@ export function createBot({
     conversations,
     config.chatModel,
     Date.now,
-    prompt =>
-      config.confirmExpensiveRequests &&
-      /^\/(image|edit)(?:@\w+)?(?:\s|$)/i.test(prompt)
-        ? config.estimateChat + config.estimateImage
-        : undefined
+    (prompt, request) =>
+      request?.workbench
+        ? config.estimateChat + workbench.estimate(request.workbench)
+        : config.confirmExpensiveRequests &&
+            /^\/(image|edit)(?:@\w+)?(?:\s|$)/i.test(prompt)
+          ? config.estimateChat + config.estimateImage
+          : undefined
   )
   const exporter = new HistoryExport(config.maxExportBytes)
   const sessionLocks = new Set<string>()
@@ -436,6 +477,8 @@ export function createBot({
     conversations
   )
   bot.tickJobs = async () => {
+    await workbench.tick()
+    live.recover()
     await jobs.tick()
     await workflow.tick(
       owner => {
@@ -506,7 +549,24 @@ export function createBot({
       }
     )
   }
-  bot.stopJobs = () => jobs.stop()
+  bot.liveStatus = owner => live.status(owner, profiles.get(owner).active)
+  bot.openLive = (owner, offer, mode) => {
+    if (
+      active.has(owner) ||
+      active.size + background + live.count >= config.maxConcurrentRequests
+    )
+      return Promise.reject(
+        new UserError(
+          'The assistant is busy. Wait for the current request to finish.'
+        )
+      )
+    return live.open(owner, profiles.get(owner).active, offer, mode)
+  }
+  bot.closeLive = (owner, id) => live.close(owner, id)
+  bot.stopJobs = () => {
+    jobs.stop()
+    void live.stop().catch(reportError)
+  }
   const pro = new ProCommands(
     profiles,
     conversations,
@@ -585,7 +645,7 @@ export function createBot({
     }
     if (
       active.has(key) ||
-      active.size + background >= config.maxConcurrentRequests
+      active.size + background + live.count >= config.maxConcurrentRequests
     ) {
       await uiReply(ctx, 'Busy. Please wait for the current request to finish.')
       return
@@ -610,6 +670,7 @@ export function createBot({
   })
 
   const help = [
+    '/pro — provider workbench. /analyze — Python data analysis. /knowledge — cloud semantic library. /connections and /connect — reviewed external actions. /meeting — recording protocol. /live — live voice. /cloud_cleanup — remote resource status.',
     '/today — daily dashboard. /morning — optional local morning overview. /scenarios, /favorite, /run — quick workflows. /notes — reviewed voice tasks. /read — article reader. /continue — project context review. /onboarding — guided setup.',
     '/quiet, /digest and /notifications — delivery controls. /bookmarks and /bookmark — saved passages. /sources — cited evidence cards. /project_budget and /project_usage — project estimates. /output — validated CSV/JSON. /queue, /priority and /defer — queued work. /language — UI and answer preferences.',
     'Start here: /guide opens a task-oriented command menu. /tasks, /batch, /glossary, /recap and /import extend your workflow. Images and background work show configured cost estimates before confirmation by default.',
@@ -707,6 +768,7 @@ export function createBot({
         workflow.deleteThread(owner, profiles.get(owner).active)
         experience.deleteThread(owner, profiles.get(owner).active)
         daily.deleteThread(owner, profiles.get(owner).active)
+        workbench.deleteThread(owner, profiles.get(owner).active)
         conversations.reset(sessionFor(ctx))
         await uiReply(
           ctx,
@@ -750,6 +812,7 @@ export function createBot({
         workflow.deleteThread(owner, argument)
         experience.deleteThread(owner, argument)
         daily.deleteThread(owner, argument)
+        workbench.deleteThread(owner, argument)
         conversations.reset(`${owner}:${argument}`)
         await uiReply(ctx, 'Conversation and its history deleted.')
         break
@@ -917,6 +980,7 @@ export function createBot({
         workflow.refresh(owner)
         experience.refresh(owner)
         daily.refresh(owner)
+        workbench.refresh(owner)
         conversations.refresh()
         controls.clear(owner, false)
       }
@@ -1010,6 +1074,86 @@ export function createBot({
       article: url => article(url, controls.current(base.owner)!.signal)
     }
   }
+  const providerContext = (
+    ctx: Context,
+    currentDocuments: Document[] = []
+  ): WorkbenchContext => {
+    const base = experienceContext(ctx),
+      owner = base.owner
+    return {
+      owner,
+      thread: base.thread,
+      signal: controls.current(owner)!.signal,
+      text: (value, keyboard, raw) => base.text(value, keyboard, raw),
+      prepare: prompt => {
+        const request = productivityContext(ctx).prepare(prompt)
+        request.documents.push(...currentDocuments)
+        return request
+      },
+      file: (bytes, name) =>
+        ctx
+          .replyWithDocument(Input.fromBuffer(Buffer.from(bytes), name))
+          .then(() => undefined),
+      document: () =>
+        currentDocuments.length
+          ? Promise.resolve(currentDocuments[0])
+          : workflowContext(ctx).document(),
+      recording: () => {
+        const message = ctx.message,
+          source =
+            message && 'reply_to_message' in message
+              ? message.reply_to_message
+              : undefined
+        return recordingMeta(source ?? message)
+      },
+      liveButton: (url, text) =>
+        uiReply(ctx, text, {
+          reply_markup: {
+            inline_keyboard: [[{ text: 'Open live voice', web_app: { url } }]]
+          }
+        }).then(() => undefined),
+      transcribe: async (file, diarize) => {
+        const { url, remaining } = await fileLink(
+          ctx,
+          file.file,
+          config.requestTimeoutMs
+        )
+        const bytes = await downloadTelegramFile(
+          url,
+          config.workbench.meetingBytes,
+          remaining,
+          fetch,
+          'Recording',
+          controls.current(owner)!.signal
+        )
+        const audio = meetingAudio(bytes, file.name)
+        const seconds = file.seconds ?? config.workbench.meetingSeconds
+        const reservation = usage.reserve(
+          owner,
+          'transcription',
+          false,
+          workspaces.thread(owner, profiles.get(owner).active).project,
+          Math.ceil(seconds / 60) * config.workbench.estimateMeetingMinute
+        )
+        try {
+          const result = await workbench
+            .port()
+            .meeting(
+              bytes,
+              audio.name,
+              audio.mime,
+              diarize,
+              controls.current(owner)!.signal
+            )
+          reservation.finish()
+          return result
+        } catch (error) {
+          reservation.fail()
+          throw error
+        }
+      }
+    }
+  }
   const respond = async (
     ctx: Context,
     text: string,
@@ -1022,6 +1166,24 @@ export function createBot({
       /^\/(memory|templates|template\s+show|collect\s+show|context\s+show|library\s+find|find)(?:\s|$)/.test(
         text
       )
+    if (
+      !prepared &&
+      /^\/(pro|analyze|knowledge|connections|connect|meeting|live|cloud_cleanup)(?:@\w+)?(?:\s|$)/i.test(
+        text
+      )
+    ) {
+      const result = await providerCommands.handle(
+        providerContext(ctx, documents),
+        text
+      )
+      if (result === true) return
+      if (result !== false) {
+        prepared = result
+        text = result.prompt
+        images = result.images
+        documents = result.documents
+      }
+    }
     if (!prepared) {
       const context = dailyContext(ctx)
       const result =
@@ -1100,7 +1262,9 @@ export function createBot({
           library: library.get(owner),
           workflow: workflow.get(owner),
           experience: experience.get(owner),
-          daily: daily.get(owner)
+          daily: daily.get(owner),
+          workbench: workbench.get(owner),
+          providerCleanup: workbench.journal.entries(owner)
         }),
         erase: () => {
           productivity.erase(owner)
@@ -1108,10 +1272,12 @@ export function createBot({
           workflow.erase(owner)
           experience.erase(owner)
           daily.erase(owner)
+          workbench.erase(owner)
         },
         deleteProject: (id: string) => {
           library.deleteProject(owner, id)
           workflow.deleteProject(owner, id)
+          if (workbench.get(owner).projects[id]) workbench.clear(owner, id)
         }
       },
       text: async (value: string) => {
@@ -1127,6 +1293,11 @@ export function createBot({
       input: (prompt: string) =>
         frozenInput(owner, thread, prompt, images, documents)
     }
+    if (!prepared && /^\/erase(?:@\w+)?\s+confirm$/.test(text.trim()))
+      for (const entry of workbench.journal
+        .entries(owner)
+        .filter(item => item.kind === 'call'))
+        await live.close(owner, entry.id).catch(() => undefined)
     const handled = prepared ? false : await pro.handle(commandContext, text)
     if (handled === true) return
     const analysisOnly = prepared?.analysisOnly ?? handled !== false
@@ -1207,7 +1378,8 @@ export function createBot({
       )
     const quoteReference = quoted(ctx)
     if (
-      (settings.reviewContext ||
+      (prepared?.workbench ||
+        settings.reviewContext ||
         (config.confirmExpensiveRequests && action !== 'auto')) &&
       !ctx.state.contextApproved
     ) {
@@ -1236,6 +1408,8 @@ export function createBot({
       )
       return
     }
+    if (prepared?.workbench)
+      workbench.preflight(owner, thread, prepared.workbench, documents)
     sessionLocks.add(session)
     const current = controls.current(owner)!
     const signalProgress = () =>
@@ -1286,6 +1460,16 @@ export function createBot({
               references: prepared.references,
               summary: prepared.summary ?? '',
               ...(prepared.evidence ? { evidence: prepared.evidence } : {}),
+              ...(prepared.workbench
+                ? {
+                    workbench: prepared.workbench,
+                    scope: {
+                      owner,
+                      thread,
+                      project: prepared.workbench.project
+                    }
+                  }
+                : {}),
               ...(prepared.structured
                 ? { structured: prepared.structured }
                 : {})
@@ -1298,7 +1482,9 @@ export function createBot({
         ...(settings.retentionSeconds !== null
           ? { retentionSeconds: settings.retentionSeconds }
           : {}),
-        ...(preview !== undefined && !prepared?.structured
+        ...(preview !== undefined &&
+        !prepared?.structured &&
+        !prepared?.workbench
           ? {
               onText: async (delta: string) => {
                 partial += delta
@@ -1328,7 +1514,8 @@ export function createBot({
                     ? 'search'
                     : 'auto',
             !config.confirmExpensiveRequests || action !== 'auto',
-            settings.project
+            settings.project,
+            prepared?.workbench ? workbench.estimate(prepared.workbench) : 0
           )
           Object.assign(options, reservation.options)
         }
@@ -1356,6 +1543,19 @@ export function createBot({
       const revision = conversations.history(session).at(-1)?.id
       const rememberDelivery = (message: number, text: string) => {
         if (revision) workflow.quote(owner, message, thread, revision, text)
+      }
+      if (answer.approval) {
+        await providerCommands.approval(providerContext(ctx), answer.approval)
+        if (preview !== undefined)
+          await ctx.telegram
+            .editMessageText(
+              ctx.chat!.id,
+              preview,
+              undefined,
+              'External actions are ready for review below.'
+            )
+            .catch(() => undefined)
+        return
       }
       if (prepared?.reviewTasks && answer.artifact) {
         await dailyCommands.taskReview(
@@ -1436,6 +1636,10 @@ export function createBot({
             answer.artifact.name
           )
         )
+      for (const file of answer.files ?? [])
+        await ctx.replyWithDocument(
+          Input.fromBuffer(Buffer.from(file.data, 'base64'), file.name)
+        )
       if (answer.images.length)
         workspaces.configure(owner, thread, { imageVersion: null })
       const voice = profiles.get(ownerFor(ctx)).voice
@@ -1478,6 +1682,25 @@ export function createBot({
   bot.on('callback_query', async ctx => {
     if (!('data' in ctx.callbackQuery)) {
       await ctx.answerCbQuery('Unsupported control.')
+      return
+    }
+    if (ctx.callbackQuery.data.startsWith('provider:')) {
+      const result = await providerCommands.callback(
+        providerContext(ctx),
+        ctx.callbackQuery.data
+      )
+      await ctx.answerCbQuery()
+      if (result !== true && result !== false) {
+        ctx.state.contextApproved = true
+        await respond(
+          ctx,
+          result.prompt,
+          result.images,
+          result.documents,
+          false,
+          result
+        )
+      }
       return
     }
     if (
@@ -1650,6 +1873,20 @@ export function createBot({
     await respond(ctx, ctx.message.text)
   })
   bot.on([message('photo'), message('document')], async ctx => {
+    if (
+      'caption' in ctx.message &&
+      /^\/meeting(?:@\w+)?(?:\s|$)/i.test(ctx.message.caption ?? '')
+    ) {
+      await respond(ctx, ctx.message.caption)
+      return
+    }
+    if (recordingMeta(ctx.message)) {
+      await uiReply(
+        ctx,
+        'Recording received. Reply to it with /meeting or /meeting speakers to review transcription and protocol processing.'
+      )
+      return
+    }
     const batch = (ctx.state.photoMessages as
       TelegramMessage[] | undefined) ?? [ctx.message]
     const images: Image[] = []
@@ -1679,6 +1916,15 @@ export function createBot({
       if ('caption' in msg && msg.caption) captions.push(msg.caption)
     }
     await respond(ctx, captions.join('\n'), images, documents)
+  })
+  bot.on(message('audio'), async ctx => {
+    if (/^\/meeting(?:@\w+)?(?:\s|$)/i.test(ctx.message.caption ?? ''))
+      await respond(ctx, ctx.message.caption!)
+    else
+      await uiReply(
+        ctx,
+        'Recording received. Reply to it with /meeting or /meeting speakers to review transcription and protocol processing.'
+      )
   })
   bot.on(message('voice'), async ctx => {
     const voice = ctx.message.voice

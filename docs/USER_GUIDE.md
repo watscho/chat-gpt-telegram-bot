@@ -435,3 +435,7 @@ Quiet hours delay notifications while background work can still run. `/result ID
 - `/continue`: inspect project excerpts, select a conversation and explicitly review/exclude context before generating a next step.
 
 Pending scenario input and task reviews expire after ten minutes. `/scenario_cancel` cancels pending scenario input. Article fetching is unauthenticated public HTTPS only; page text is then sent to the model under normal limits. Morning summaries are local and make no model call. Daily settings/favorites/reviews are exported privately but are not restored by archive import; destination preferences remain authoritative.
+
+## Provider workflows
+
+Start with `/pro`. Use `/analyze`, `/knowledge`, `/connect`, `/meeting` or `/live` for reviewed provider work. Follow the [step-by-step user paths and retention guide](pro-provider.md); cloud knowledge is separate from the local library, and meeting tasks require their own confirmation.

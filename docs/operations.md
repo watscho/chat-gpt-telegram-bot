@@ -103,3 +103,7 @@ Version 7 retains schema 3 and archive format 2. Back up the complete private da
 The article reader needs outbound DNS and direct public HTTPS access. It sends no credentials/cookies and does not bypass login/paywalls, execute scripts or use proxy/global-agent pooling. Validated DNS addresses are pinned per request. Response bytes, redirects and a shared abort deadline are bounded. Network-level egress controls remain operator-owned. Article extraction/transport is unit-verified with controlled doubles only; live reachability/content/provider acceptance is unverified.
 
 Include `daily` in access controls/backups/erasure reviews. Expired pending payloads clear lazily on owner access; persisted snapshots can remain in private backups independently. `/data` exports the scope, while import ignores source daily state and preserves destination settings/tokens. Source schedules/review authorizations never replay from an import. See [daily guide and limits](pro-daily.md).
+
+## Operating provider workflows
+
+Before enabling the 8.0 workflows, follow [provider setup and qualification](pro-provider.md). Build browser assets, configure a public HTTPS proxy if live voice is enabled, and inspect `/cloud_cleanup` after failures. Complete remote cleanup before rollback; preserve unresolved cleanup records when backing up or restoring state.

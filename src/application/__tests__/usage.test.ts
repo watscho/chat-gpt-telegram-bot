@@ -132,3 +132,13 @@ void test('project estimates share the owner reservation write, refund unused to
   late.finish({ images: 0, searches: 0 })
   assert.equal(ledger.get('a').requests, 0)
 })
+void test('invalid extra operation estimates cannot enter quota accounting', () => {
+  const settings = config(),
+    ws = new Workspaces(settings),
+    usage = new UsageLedger(settings, ws)
+  for (const value of [-1, NaN, Infinity, 0.5])
+    assert.throws(
+      () => usage.reserve('a', 'chat', false, null, value),
+      /Invalid operation estimate/
+    )
+})

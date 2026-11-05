@@ -38,7 +38,8 @@ export class UsageLedger {
     owner: string,
     kind: UsageKind,
     allowImages = true,
-    projectId?: string | null
+    projectId?: string | null,
+    extraEstimate = 0
   ): {
     options: {
       enableImages: boolean
@@ -48,6 +49,8 @@ export class UsageLedger {
     finish: (actual?: { images: number; searches: number }) => void
     fail: () => void
   } {
+    if (!Number.isSafeInteger(extraEstimate) || extraEstimate < 0)
+      throw new UserError('Invalid operation estimate.')
     const usage = this.get(owner)
     const settings = this.workspaces.get(owner)
     const project = projectId
@@ -133,6 +136,7 @@ export class UsageLedger {
     const transcriptions = kind === 'transcription' ? 1 : 0
     const estimate =
       base +
+      extraEstimate +
       images * this.config.estimateImage +
       searches * this.config.estimateSearch
     if (

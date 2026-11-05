@@ -32,7 +32,8 @@ export class ProductivityCommands {
     private readonly defaultModel: string,
     private readonly now = Date.now,
     private readonly imageEstimate: (
-      prompt: string
+      prompt: string,
+      request?: Pick<PreparedRequest, 'workbench'>
     ) => number | undefined = () => undefined
   ) {}
   private revision(ctx: ProductivityContext): string | undefined {
@@ -48,7 +49,7 @@ export class ProductivityCommands {
       this.revision(ctx),
       request
     )
-    const estimate = this.imageEstimate(request.prompt)
+    const estimate = this.imageEstimate(request.prompt, request)
     if (estimate !== undefined) {
       this.data.setEstimate(ctx.owner, estimate)
       draft.estimate = estimate
@@ -176,7 +177,7 @@ export class ProductivityCommands {
         this.revision(ctx)
       )
       if (action === 'send') {
-        const estimate = this.imageEstimate(draft.prompt)
+        const estimate = this.imageEstimate(draft.prompt, draft)
         if (estimate !== undefined && estimate !== draft.estimate)
           throw new UserError(
             'The estimated cost changed. Create a new preview before confirming.'

@@ -20,6 +20,7 @@ export interface WorkflowContext {
   imported(): void
 }
 const sections: Record<string, string> = {
+  pro: 'Provider workbench\n/pro shows setup. /analyze runs reviewed Python analysis with output files. /knowledge manages opt-in project cloud search. /connections and /connect use configured external services with exact tool approvals. /meeting prepares recording protocols and reviewed tasks. /live opens the voice Mini App. /cloud_cleanup inspects outstanding provider resources.',
   daily:
     'Daily workflows\n/today shows tasks and ready results. /morning 09:00 enables a local morning dashboard. /scenarios and /favorites launch reusable workflows; /notes on turns voice messages into reviewed task proposals. /read URL reads an article; /continue reviews project context. /onboarding restarts guided setup.',
   delivery:

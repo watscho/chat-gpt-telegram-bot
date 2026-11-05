@@ -26,3 +26,7 @@ English is the source language for code, comments, documentation and commits. De
 ## Daily workflow contracts
 
 New workflow tests remain adjacent unit tests. Mock DNS/HTTPS transport and assert public-address policy, pinned lookup behavior (single/all address forms), redirect/byte/type/cancellation limits and malformed text extraction without live URL requests. Task proposals must remain inert until a bound confirmation; use atomic task-record writes and stable token-derived IDs. Test context-review intent propagation, legacy template syntax, stale callbacks, allowlists and morning attempt-before-effect behavior. Do not add network, browser, native DB, performance or integration qualification to this workflow.
+
+## Provider workflow qualification
+
+Provider changes require adjacent unit tests with fake provider/HTTP/media ports and the existing 100% executable-source gate. Do not introduce paid API, native microphone/browser, SQLite/decoder or deployment tests into the unit suite. Operator acceptance and credentials are separate; document unqualified external behavior in [the provider guide](docs/pro-provider.md).

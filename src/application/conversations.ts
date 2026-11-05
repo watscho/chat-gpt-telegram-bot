@@ -291,20 +291,22 @@ export class Conversations {
       }))
     ])
     if (evidence.length) response.evidence = evidence
+    const generatedDocuments = [
+      ...(response.files ?? []),
+      ...(response.artifact
+        ? [
+            {
+              name: response.artifact.name,
+              mime: response.artifact.mime,
+              data: response.artifact.data
+            }
+          ]
+        : [])
+    ]
     messages.push({
       id: randomUUID(),
       ...(evidence.length ? { evidence } : {}),
-      ...(response.artifact
-        ? {
-            documents: [
-              {
-                name: response.artifact.name,
-                mime: response.artifact.mime,
-                data: response.artifact.data
-              }
-            ]
-          }
-        : {}),
+      ...(generatedDocuments.length ? { documents: generatedDocuments } : {}),
       role: 'assistant',
       content: [response.text, formatSources(response.sources)]
         .filter(Boolean)
