@@ -1,6 +1,8 @@
 # Pro experience release and acceptance
 
-Version: 6.0.0. Start with `/guide`; delivery, saved evidence and structured outputs have dedicated navigation sections. Existing workflows remain documented in the [user guide](USER_GUIDE.md), [productivity guide](pro-productivity.md) and [workflow guide](pro-workflows.md).
+Current release: **10.0.1**.
+
+These workflows were introduced in version 6.0.0. Start with `/guide`; delivery, saved evidence and structured outputs have dedicated navigation sections. Existing workflows remain documented in the [user guide](USER_GUIDE.md), [productivity guide](pro-productivity.md) and [workflow guide](pro-workflows.md).
 
 | Capability                      | Entry point                             | Local acceptance                                                                                  |
 | ------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -58,4 +60,4 @@ SQLite metadata upgrades 0/1/2 to schema 3; version 5 rejects schema 3. See [upg
 
 The new owner `experience` record is capped at 1 MB and cleared by erasure. Conversation reset/delete clears its pending notices but preserves explicit bookmarks/preferences. This is single-process coordination, with no distributed queue guarantee.
 
-Verification: 227 adjacent unit tests pass, with 100% executable source line, branch and function coverage and unchanged exclusions/thresholds. Providers, Telegram, persistence, clocks and native/process boundaries use controlled doubles. Types, lint, formatting, production compilation, packaged locale resources and documentation/version consistency are checked separately. No paid requests, real database, FFmpeg, PDF parser/renderer, browser, Docker, integration, performance or soak tests qualify this release. Production deployment and live provider acceptance remain unverified.
+Historical introduction evidence (6.0.0): 227 adjacent unit tests passed, with 100% executable source line, branch and function coverage and unchanged exclusions/thresholds. Providers, Telegram, persistence, clocks and native/process boundaries use controlled doubles. Types, lint, formatting, production compilation, packaged locale resources and documentation/version consistency are checked separately. No paid requests, real database, FFmpeg, PDF parser/renderer, browser, Docker, integration, performance or soak tests qualify this release. Production deployment and live provider acceptance remain unverified.

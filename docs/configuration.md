@@ -1,5 +1,7 @@
 # Configuration reference
 
+Current release: **10.0.1**.
+
 Copy `.env.example` to `.env` for local development, or inject environment variables in production. Never commit credentials, state databases or user content. Invalid numeric and enum values fail at startup; error messages name settings without their values. Numeric values must be positive integers within the maxima below.
 
 ## Credentials and models
@@ -105,7 +107,7 @@ Fixed workflow bounds: 100 tasks/owner, 1000 title characters, eight tasks/list 
 
 Current archives use `archiveVersion: 2` and schema 3 storage; version 1 and legacy unversioned archives remain importable. Import is additive, requires durable storage, obeys the current conversation/project/note/file/history/library/productivity/workflow limits and never evicts existing histories to fit. `MAX_EXPORT_BYTES` bounds the archive; Telegram's per-document download cap also applies. Imported global voice/timezone/budget settings, credentials, jobs/schedules, quotas and active controls are not restored. See [workflow acceptance](pro-workflows.md) for the complete portable contract.
 
-## Version 6 owner preferences and fixed bounds
+## Owner preferences and fixed bounds
 
 No new environment variables are required. `/quiet`, `/digest`, `/language ui`, bookmarks and notification references persist in the owner `experience` record (1 MB maximum). Defaults: quiet off, digest immediate, UI English. Quiet windows use `/timezone`; digests allow 5..1440 minutes, 100 pending notices and batches of 10, with three delivery attempts and 60-second backoff. Bookmarks allow 100 entries, 10 tags and 4000-character passages.
 
@@ -113,7 +115,7 @@ No new environment variables are required. `/quiet`, `/digest`, `/language ui`, 
 
 Project daily estimate caps persist with project settings and cannot exceed owner/operator ceilings. Shared atomic owner usage records include project aggregates; UTC rollover and conservative failed-attempt accounting remain authoritative. Queue priority is 0..9, default zero; deferred eligibility uses an absolute timestamp parsed from `/timezone`. See [all behavior and limits](pro-experience.md).
 
-## Version 7 daily workflows
+## Daily workflows
 
 No new environment variables or dependencies are added. Owner commands persist guided setup, `/notes`, `/morning`, favorite/recent scenario IDs and pending review metadata in a 100 KB `daily` record. Notes and morning default off. Favorites are capped at 20, recent IDs at 10 and scenario pages at 12. Pending scenario input and task reviews expire after ten minutes. Reviewed task batches accept at most 10 rows within the existing 100-task owner capacity. All paid generation/transcription/edit work retains existing owner/project quotas and cost/context controls.
 

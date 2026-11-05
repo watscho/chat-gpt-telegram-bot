@@ -1,6 +1,8 @@
 # Daily workflows: guide and release acceptance
 
-Version: 7.0.0. Open `/start` for the short entry flow or `/guide daily` for navigation. These workflows reuse private-chat allowlisting, owner/thread binding, existing budgets, cancellation, context review and history limits.
+Current release: **10.0.1**.
+
+These daily workflows were introduced in version 7.0.0. Open `/start` for the short entry flow or `/guide daily` for navigation. These workflows reuse private-chat allowlisting, owner/thread binding, existing budgets, cancellation, context review and history limits.
 
 | Scenario                  | User path                                | Unit acceptance                                                                                                    |
 | ------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -106,4 +108,4 @@ The owner `daily` scope is capped at 100 KB. It stores setup focus/completion, n
 
 `/data` includes daily state as private export data. Format 2 import deliberately preserves destination daily settings/favorites/recent/pending reviews and does not restore source daily state, tokens or morning delivery. This avoids replaying schedules/authorizations from an archive. Portable templates, created tasks and retained article/structured documents continue through the established validated merge. Schema stays 3, archive format stays 2, and no new environment variables or dependencies are required.
 
-Verification: 245 adjacent unit tests with 100% executable source lines, branches and functions, unchanged thresholds/exclusions, plus types, lint, formatting, production compilation and static documentation/resource/version checks. DNS, HTTPS, Telegram, model, persistence, clocks and native/process boundaries use controlled doubles. No live URLs/API calls, real databases, FFmpeg, PDF parsing/rendering, browser, Docker, integration, performance or soak tests qualify this release. Production deployment and live provider acceptance remain unverified.
+Historical introduction evidence (7.0.0): 245 adjacent unit tests with 100% executable source lines, branches and functions, unchanged thresholds/exclusions, plus types, lint, formatting, production compilation and static documentation/resource/version checks. DNS, HTTPS, Telegram, model, persistence, clocks and native/process boundaries use controlled doubles. No live URLs/API calls, real databases, FFmpeg, PDF parsing/rendering, browser, Docker, integration, performance or soak tests qualify this release. Production deployment and live provider acceptance remain unverified.

@@ -1,6 +1,8 @@
 # Contributing
 
-Use Node from `.nvmrc` and npm from `package.json`; install with `npm ci --ignore-scripts`. Automated checks need no credentials, live services or FFmpeg. Copy `.env.example` only when intentionally running a local bot. Repository source, comments, documentation, examples and commit messages use English.
+Current release: **10.0.1**.
+
+Use Node from `.nvmrc` and npm from `package.json`; install with `npm ci --ignore-scripts`, then run `npm run hooks:install`. Automated checks need no credentials, live services or FFmpeg. Copy `.env.example` only when intentionally running a local bot. Repository source, comments, documentation, examples and commit messages use English.
 
 Keep domain/application logic independent of Telegram/OpenAI SDK types. Add adjacent behavior-focused unit tests in `__tests__` for state, failures, ownership, cancellation, limits and provider contracts. Shared controlled doubles belong in `src/__tests__/helpers.ts`. Only unit tests are permitted: mock network, filesystem/database constructors, clocks, process lifecycle, PDF rendering and FFmpeg spawning. Never add live API, application subprocess, native database/encoder, browser, Docker, integration, performance or soak tests.
 
@@ -9,11 +11,14 @@ Require 100% executable source lines, branches and functions. Exclude tests only
 Before opening a pull request:
 
 ```sh
-npm run check
-npm run test:coverage
+npm run verify
 ```
 
-These run static checks, unit tests and TypeScript compilation. `npm audit` is a separate network-backed dependency advisory query, not a unit test. CI includes it; do not substitute advisory results for runtime qualification.
+`npm run verify` is shared by CI and the tracked pre-push hook. It runs type/lint/format and release-documentation consistency checks, adjacent unit tests, production compilation, the 100% executable-source coverage gate and `npm audit --audit-level=high`. Audit is a network-backed dependency advisory query, not a unit test; it does not call a paid model or establish runtime qualification.
+
+The hook requires the outgoing commit to match checked-out HEAD and a clean tracked/untracked worktree. It installs the committed lockfile with `npm ci --ignore-scripts --no-audit --no-fund`, runs verification, then rechecks HEAD/worktree before allowing the push. Commit or stash changes before pushing; switch to the branch you intend to push. Deletion-only pushes contain no outgoing code and skip the validation pipeline. Failed installation, unavailable audit metadata, failed checks or changed state block the push. Do not bypass the hook to publish a failing release.
+
+Ordinary npm installation runs `prepare` to install `.githooks` through repository-local `core.hooksPath`. Installs using `--ignore-scripts` require the explicit `npm run hooks:install` step. The installer preserves an existing different hooks path or existing default hooks and asks you to integrate this pre-push command deliberately. Git archive/non-worktree installs skip hook setup. The hook uses the repository's Node 26 requirement and native TypeScript loading; no additional hook dependency is installed. Hook behavior has adjacent unit tests with mocked Git/npm/filesystem ports; no application subprocess, network or paid-provider test is added.
 
 Describe changed behavior, migration impact and the checks actually performed. Update user/configuration/operations documentation and `CHANGELOG.md`; keep package and lockfile versions aligned. Commit lockfile changes with dependencies. Never include credentials, private messages, real user files or raw provider errors in fixtures, logs or issues. Do not claim live/native/deployment acceptance from unit coverage.
 
@@ -34,3 +39,7 @@ Provider changes require adjacent unit tests with fake provider/HTTP/media ports
 ## Studio regression contract
 
 Keep Studio lifecycle, provider execution, HTTP and browser-port tests adjacent and unit-only. Preserve the 100% executable source gate; cover claim-write/result-write failures, restart/cancel races, exact approvals, sparse sources/files, edited-draft continuation, stale model estimates, owner/revision checks and dirty-editor refresh races. UI contract tests use controlled DOM/fetch objects and do not qualify native rendering. [Studio qualification](docs/pro-studio.md) records the external acceptance boundary.
+
+## Release consistency
+
+`package.json` is the release-version source. Keep the root lockfile entries, latest changelog entry and exactly one `Current release: **VERSION**.` declaration in README, contributing/security guidance and every Markdown guide under `docs/` synchronized. Guide titles stay unversioned; explicitly historical introduction counts, changelog records, database/archive schemas, dependency versions and migration instructions keep their own original numbers. `npm run docs:check` enforces release declarations and README capability/area totals before unit checks and before push.

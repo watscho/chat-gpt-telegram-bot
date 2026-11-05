@@ -1,5 +1,15 @@
 # Changelog
 
+## 10.0.1 — Complete catalog and push verification
+
+- Lead the README with a full catalog of 116 documented capabilities across 14 areas, including expandable details, commands and source guides for all release generations.
+- Synchronize current-release declarations across maintained guides, remove stale versioned titles and distinguish historical release/migration evidence; add an automatic package/lockfile/changelog/docs/catalog consistency gate.
+- Add a tracked pre-push hook and idempotent developer installation; preserve existing custom/default hooks and skip non-worktree installs.
+- Require the outgoing commit to match checked-out HEAD and a clean worktree, install the exact lockfile without lifecycle scripts, run the shared CI verification command, and reject failed checks or state changes during verification.
+- Unify CI and local verification under `npm run verify`, including unit/static/build checks, the strict 100% executable-source coverage gate and the high-severity npm advisory query.
+- Resolve the v10.0.0 CI advisory failure by pinning PptxGenJS's transitive `image-size` dependency to patched version 2.0.4; keep PptxGenJS 4.0.1 and commit the resulting lockfile.
+- Cover hook/reference/version/installation/failure behavior and release/catalog consistency with adjacent isolated unit tests using mocked Git, npm and filesystem ports. All 400 unit tests pass with 100% executable-source lines, branches and functions; static/build checks pass and npm audit reports zero vulnerabilities.
+
 ## 10.0.0 — Pro Suite
 
 - Add a unified `/suite` directory and authenticated workspace navigation for twenty connected capabilities, with frozen materials, explicit plans, configured estimates and retained results.

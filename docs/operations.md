@@ -1,5 +1,7 @@
 # Operations
 
+Current release: **10.0.1**.
+
 ## Run and store state
 
 Run exactly **one polling process per bot token**. Replicas conflict on Telegram polling and do not share in-memory locks/quotas/caches. SQLite is local durable state, not distributed coordination. No inbound HTTP server is needed. Production requires outbound HTTPS/WebSocket access and a private writable state directory.
@@ -12,7 +14,7 @@ npm start
 
 The build excludes tests, credentials and databases from `dist`. New Unix directories use `0700`, database files `0600`; existing parent permissions remain the operator's responsibility. SQLite is not encrypted by the application. The ignored `data/` directory should be on persistent private storage. `STATE_DB_PATH=:memory:` is disposable.
 
-## Schema 2 migration and rollback
+## Historical schema 2 migration and rollback
 
 Version 4 accepts SQLite schema 0/1/2 and upgrades older databases to schema 2 on open, adding scoped JSON records for workspaces, usage and queues while retaining profiles/sessions. Unknown newer schemas and corrupt state fail with sanitized errors. This migration has unit-contract coverage only; no real database migration test was run.
 
@@ -92,7 +94,7 @@ Ship the complete compiled `dist` tree, including `telegram/locales/messages.jso
 
 Monitor `/notifications`, `/tasks all`, `/jobs` and `/queue` for local state. Quiet/digest requires ordinary worker ticks and an alive process; it does not suspend paid execution. A queued task/job notification means accepted by the outbox, not confirmed Telegram delivery. Three transport attempts with 60-second backoff apply; explicit `/notifications retry ID` rearms delivery only. `/digest now` bypasses time windows but respects exhausted attempts/backoff. `/notifications drop ID` suppresses it; manual `/result ID` fetches retained output immediately. Deleted/done/sent/suppressed targets are discarded without new work. Full outboxes need manual cleanup/retrieval. Duplicate delivery remains possible after ambiguous transport/acknowledgement failures.
 
-Project statistics are configured UTC estimates inside owner limits. Deleted origin projects cause queued paid work to stop before execution. Erasure retains minimal same-day owner/project counters to prevent quota bypass; reusing project IDs can conservatively retain the day's totals. No live/native/provider/deployment acceptance is claimed by the unit gate. See [version 6 acceptance](pro-experience.md).
+Project statistics are configured UTC estimates inside owner limits. Deleted origin projects cause queued paid work to stop before execution. Erasure retains minimal same-day owner/project counters to prevent quota bypass; reusing project IDs can conservatively retain the day's totals. No live/native/provider/deployment acceptance is claimed by the unit gate. See [experience acceptance](pro-experience.md).
 
 ## Version 7 daily release operations
 
@@ -106,7 +108,7 @@ Include `daily` in access controls/backups/erasure reviews. Expired pending payl
 
 ## Operating provider workflows
 
-Before enabling the 8.0 workflows, follow [provider setup and qualification](pro-provider.md). Build browser assets, configure a public HTTPS proxy if live voice is enabled, and inspect `/cloud_cleanup` after failures. Complete remote cleanup before rollback; preserve unresolved cleanup records when backing up or restoring state.
+Before enabling provider workflows, follow [provider setup and qualification](pro-provider.md). Build browser assets, configure a public HTTPS proxy if live voice is enabled, and inspect `/cloud_cleanup` after failures. Complete remote cleanup before rollback; preserve unresolved cleanup records when backing up or restoring state.
 
 ## Operating Pro Studio
 
@@ -119,3 +121,7 @@ Back up the stopped database before version 10. SQLite remains schema 3; new `su
 Use Node 26.13 within Node 26 for the experimental bounded ZIP API. Install trusted FFmpeg/ffprobe for recorded video, keep their paths protected and retain the existing libopus requirement for outgoing voice. Video uses private temporary files, fixed arguments, a file/pipe protocol allowlist, explicit MOV external-reference restrictions, dimensions/frames/bytes/deadlines and cleanup. No native acceptance command is part of CI or this release qualification.
 
 Watch subscriptions perform unauthenticated public HTTPS reads without a model call. Quiet windows suppress their notifications while retaining changes. Shared projects require durable state and allowlisted private identities; back up the global `teams` scope alongside owner records. See [Suite limits, recovery, export/erase/import and qualification boundaries](pro-suite.md).
+
+## Push verification
+
+Developer setup installs the tracked `.githooks/pre-push` with `npm run hooks:install` (also invoked by normal npm `prepare`). CI and the hook share `npm run verify`, including the high-severity advisory gate. The hook reinstalls locked dependencies without lifecycle scripts, requires a clean worktree/current outgoing HEAD, and rechecks both after verification. Existing hook configurations are preserved; see [contributing](../CONTRIBUTING.md) for integration and failure behavior. A local hook complements server-side CI and cannot establish native/deployment acceptance.

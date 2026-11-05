@@ -1,6 +1,8 @@
 # Pro workflows release and acceptance
 
-Version: 5.0.0. This release adds seven workflows while retaining private-chat allowlisting, local ownership, complete-turn persistence and unit-only verification.
+Current release: **10.0.1**.
+
+These seven workflows were introduced in version 5.0.0 while retaining private-chat allowlisting, local ownership, complete-turn persistence and unit-only verification.
 
 | Feature                 | Entry point                            | Behavior                                                                                                               |
 | ----------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -51,4 +53,4 @@ Validation covers archive shape/version, roles and complete turns, IDs/duplicate
 
 ## Verification evidence
 
-The release unit suite contains 194 passing tests and enforces 100% executable source line, branch and function coverage. Production files remain included, with tests excluded only by the existing adjacent `__tests__` rule. TypeScript, ESLint, Prettier, production compilation, documentation links, environment documentation and release-version alignment are checked separately. No real provider, database, encoder, PDF parser/renderer, browser or Docker execution was used for qualification.
+Historical introduction evidence (5.0.0): the release unit suite contained 194 passing tests and enforces 100% executable source line, branch and function coverage. Production files remain included, with tests excluded only by the existing adjacent `__tests__` rule. TypeScript, ESLint, Prettier, production compilation, documentation links, environment documentation and release-version alignment are checked separately. No real provider, database, encoder, PDF parser/renderer, browser or Docker execution was used for qualification.

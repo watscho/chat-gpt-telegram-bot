@@ -1,5 +1,7 @@
 # Telegram AI Bot Pro: user guide
 
+Current release: **10.0.1**.
+
 The bot works in private chats for allowlisted users only. Features use the OpenAI API and incur provider charges. Pro refers to this project's feature set.
 
 ## Quick navigation
@@ -398,7 +400,7 @@ Credentials, usage/quota counters, jobs/results, schedules, delivery mappings, a
 
 The merge writes profile, new sessions and merged content records atomically, then refreshes local caches. It does not evict existing histories to make room. Invalid content, unsupported versions or insufficient limits reject the merge. Native database migration/durability is not certified by unit coverage; keep an operator backup before moving important data.
 
-## Delivery, saved evidence and files (version 6)
+## Delivery, saved evidence and files
 
 Start with `/guide delivery`, `/guide saved` or `/guide outputs`. The [Pro experience guide](pro-experience.md) gives full syntax, limits, retention and examples for all seven new capabilities.
 
@@ -422,7 +424,7 @@ Start with `/guide delivery`, `/guide saved` or `/guide outputs`. The [Pro exper
 
 Quiet hours delay notifications while background work can still run. `/result ID` remains immediate; `/notifications retry ID` retries delivery only. Save answer/source buttons make explicit bookmarks; source-card buttons display retained excerpts without fetching a webpage. Bookmarks survive history expiry/reset until explicitly deleted or erased. Project estimates share the owner's UTC budget and are not invoices. CSV/JSON output uses nullable string cells and is validated for shape/size, not truth. Queue positions are local snapshots without ETAs. Interface and answer languages are independent; technical UI text without a catalog entry remains English.
 
-## Daily entry points (version 7)
+## Daily entry points
 
 `/start` now opens short guided setup, then Today on later visits. `/help` remains the full reference. Use `/guide daily` or the [daily workflow guide](pro-daily.md) for complete syntax, costs and limits.
 

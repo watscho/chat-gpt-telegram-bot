@@ -1,6 +1,8 @@
-# Pro Studio (9.0)
+# Pro Studio
 
-Studio connects existing provider capabilities into reviewed, durable workflows. Start with `/workspace`, `/inbox` or `/autopilot goal`. It uses the same private-chat allowlist, OpenAI account, operator estimates and owner/project quotas as the rest of the bot. No new dependency, provider account or automatic paid capability is enabled by upgrading.
+Current release: **10.0.1**.
+
+Studio connects existing provider capabilities into reviewed, durable workflows. Start with `/workspace`, `/inbox` or `/autopilot goal`. It uses the same private-chat allowlist, OpenAI account, operator estimates and owner/project quotas as the rest of the bot. Model work and external actions require their explicit plan/action approvals. See the current Suite and provider guides for dependencies and setup.
 
 ## Seven delivered workflows
 

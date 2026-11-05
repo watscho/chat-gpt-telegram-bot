@@ -1,5 +1,7 @@
 # Architecture and unit-test conventions
 
+Current release: **10.0.1**.
+
 ## Boundaries
 
 | Layer                                                | Responsibilities                                                                                                                            |

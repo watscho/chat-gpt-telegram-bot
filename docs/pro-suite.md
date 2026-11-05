@@ -1,6 +1,8 @@
 # Pro Suite: twenty-workflow acceptance contract
 
-Status: implemented in version 10.0.0; unit/static qualification is recorded below. This matrix consolidates the twenty approved follow-up capabilities. Existing Studio/provider workflows are reused; a recipe name alone is not completion evidence. Final qualification remains adjacent unit/static checks only, with no paid, native-media, browser, integration or deployment acceptance runs.
+Current release: **10.0.1**.
+
+Status: implemented; introduced in version 10.0.0; unit/static qualification is recorded below. This matrix consolidates the twenty approved follow-up capabilities. Existing Studio/provider workflows are reused; a recipe name alone is not completion evidence. Final qualification remains adjacent unit/static checks only, with no paid, native-media, browser, integration or deployment acceptance runs.
 
 | #   | Capability                    | Required usable behavior                                                                                                  | Phase |
 | --- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ----- |
@@ -130,4 +132,4 @@ Only isolated adjacent units/static checks qualify this release. Document librar
 
 ## Qualification
 
-Version 10.0.0 is qualified with adjacent isolated unit tests and the unchanged 100% executable-source line/branch/function gate, plus TypeScript, ESLint, formatting and build checks. External/native/browser/deployment acceptance remains outside this evidence. See the release changelog for the final test count.
+The current release uses adjacent isolated unit tests and the unchanged 100% executable-source line/branch/function gate, plus TypeScript, ESLint, formatting and build checks. External/native/browser/deployment acceptance remains outside this evidence. See the current changelog entry for the release test count.

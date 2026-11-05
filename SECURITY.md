@@ -1,5 +1,7 @@
 # Security policy
 
+Current release: **10.0.1**.
+
 Security fixes target the current main branch. Older releases are not maintained.
 
 Report vulnerabilities privately using GitHub's **Report a vulnerability** option if enabled for this repository. If private reporting is unavailable, contact the repository owner through the profile linked on GitHub to arrange a private channel. Do not publish exploitable details or real credentials in public issues. No response-time SLA is promised.

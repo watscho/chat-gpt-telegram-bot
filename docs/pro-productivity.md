@@ -1,6 +1,8 @@
 # Pro productivity release: scope and acceptance
 
-Version: 4.1.0. This release implements seven additional workflows. All automated verification is unit-only; coverage does not establish live provider behavior, native PDF extraction quality or deployment readiness.
+Current release: **10.0.1**.
+
+These seven productivity workflows were introduced in version 4.1.0 and are maintained for the current release. All automated verification is unit-only; coverage does not establish live provider behavior, native PDF extraction quality or deployment readiness.
 
 | Feature                    | User workflow                                                                           | Acceptance                                                                                                                            |
 | -------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -27,4 +29,4 @@ Version: 4.1.0. This release implements seven additional workflows. All automate
 
 ## Qualification
 
-Phases: application/storage contracts, Telegram wiring, unit failure/isolation coverage, and documentation/release validation. Completed unit evidence: 165 passing unit tests with 100% executable source lines, branches and functions. Completion also requires static checks and production compilation. No real PDF parsing, provider requests or deployment actions are authorized as tests. See the architecture and operations references for persistence and recovery limits.
+Phases: application/storage contracts, Telegram wiring, unit failure/isolation coverage, and documentation/release validation. Historical introduction evidence (4.1.0): 165 passing unit tests with 100% executable source lines, branches and functions. Completion also requires static checks and production compilation. No real PDF parsing, provider requests or deployment actions are authorized as tests. See the architecture and operations references for persistence and recovery limits.

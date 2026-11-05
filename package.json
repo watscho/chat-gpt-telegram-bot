@@ -1,6 +1,6 @@
 {
   "name": "chat-gpt-telegram-bot",
-  "version": "10.0.0",
+  "version": "10.0.1",
   "private": true,
   "description": "A private TypeScript Telegram assistant with projects, streaming, usage controls, documents, image workflows, durable jobs and timezone-aware schedules.",
   "type": "module",
@@ -30,8 +30,12 @@
     "format:check": "prettier --check .",
     "test": "node --experimental-test-module-mocks --import tsx --test 'src/**/__tests__/*.test.ts'",
     "test:coverage": "node --experimental-test-module-mocks --import tsx --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 --test-coverage-include='src/**/*.ts' --test-coverage-exclude='src/**/__tests__/**' --test 'src/**/__tests__/*.test.ts'",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build",
-    "test:unit": "node --experimental-test-module-mocks --import tsx --test 'src/**/__tests__/*.test.ts'"
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run docs:check && npm test && npm run build",
+    "test:unit": "node --experimental-test-module-mocks --import tsx --test 'src/**/__tests__/*.test.ts'",
+    "verify": "npm run check && npm run test:coverage && npm audit --audit-level=high",
+    "hooks:install": "node scripts/install-hooks.mjs",
+    "prepare": "npm run hooks:install",
+    "docs:check": "node scripts/check-release.mjs"
   },
   "dependencies": {
     "docx": "9.15.2",
@@ -54,6 +58,9 @@
     "typescript-eslint": "8.72.1"
   },
   "overrides": {
-    "minimatch": "11.0.4"
+    "minimatch": "11.0.4",
+    "pptxgenjs": {
+      "image-size": "2.0.4"
+    }
   }
 }

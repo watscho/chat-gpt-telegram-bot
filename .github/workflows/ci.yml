@@ -15,6 +15,4 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: npm run check
-      - run: npm run test:coverage
-      - run: npm audit --audit-level=high
+      - run: npm run verify

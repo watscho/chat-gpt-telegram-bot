@@ -1,6 +1,8 @@
-# Provider workbench (8.0)
+# Provider workbench
 
-This release adds five opt-in workflows to the existing private bot. `/pro` is the entry point. Pro names repository features; API billing, model access, MCP accounts and public HTTPS hosting are separate operator responsibilities. Startup does not verify provider acceptance.
+Current release: **10.0.1**.
+
+The provider workbench supports five opt-in workflows to the existing private bot. `/pro` is the entry point. Pro names repository features; API billing, model access, MCP accounts and public HTTPS hosting are separate operator responsibilities. Startup does not verify provider acceptance.
 
 ## User paths
 
@@ -20,7 +22,7 @@ External-service requests do not automatically attach documents or chat history.
 
 ## Operator setup
 
-Use a persistent `STATE_PATH` (not `:memory:`). The normal composition supplies the OpenAI workbench automatically with your existing `OPENAI_API_KEY`. Configure the models and conservative cost estimates in `.env.example`; these are reservations, not measured invoices or hard provider spending caps. Owner and selected-project daily budgets apply to paid calls. Each live session reserves its full configured duration before the provider call; a shorter session does not refund that estimate. Limit account spending separately at the provider.
+Use a persistent `STATE_DB_PATH` (not `:memory:`). The normal composition supplies the OpenAI workbench automatically with your existing `OPENAI_API_KEY`. Configure the models and conservative cost estimates in `.env.example`; these are reservations, not measured invoices or hard provider spending caps. Owner and selected-project daily budgets apply to paid calls. Each live session reserves its full configured duration before the provider call; a shorter session does not refund that estimate. Limit account spending separately at the provider.
 
 ### Authenticated MCP services
 
@@ -64,6 +66,6 @@ Adjacent unit tests cover adapters with fake fetch/SDK responses, scoped retriev
 
 References: [Code Interpreter](https://developers.openai.com/api/docs/guides/tools-code-interpreter), [File Search](https://developers.openai.com/api/docs/guides/tools-file-search), [MCP](https://developers.openai.com/api/docs/guides/tools-connectors-mcp), [transcription](https://developers.openai.com/api/docs/guides/transcription), [Telegram Web App validation](https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app).
 
-## Studio integration (9.0)
+## Studio integration
 
 [Pro Studio](pro-studio.md) composes these adapters into durable reviewed missions and adds a workspace under the same HTTPS Mini App base. Existing cleanup, account-access, cost and remote-effect limitations still apply. The workspace does not require live voice activation or microphone permission.
