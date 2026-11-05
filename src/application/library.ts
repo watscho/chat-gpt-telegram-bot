@@ -165,6 +165,9 @@ export class Library {
       )
       .join('\n\n')
   }
+  refresh(owner: string): void {
+    this.cache.delete(owner)
+  }
   erase(owner: string): void {
     this.store?.deleteRecord('library', owner)
     this.cache.delete(owner)

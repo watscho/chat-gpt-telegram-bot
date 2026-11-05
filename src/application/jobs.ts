@@ -110,6 +110,56 @@ export class Jobs {
     this.save(owner, queue)
     return structuredClone(job)
   }
+  enqueueBatch(
+    owner: string,
+    thread: string,
+    action: string,
+    input: JobInput
+  ): string {
+    if (
+      !['summarize', 'extract', 'table'].includes(action) ||
+      !input.documents.length ||
+      input.documents.length > 10 ||
+      input.prompt.length > 1000
+    )
+      throw new UserError(
+        'Choose summarize, extract or table and 1..10 files with at most 1000 instruction characters.'
+      )
+    const queue = this.get(owner)
+    if (queue.jobs.length + input.documents.length > this.config.maxJobs)
+      throw new UserError(
+        'Not enough free job slots for this batch. Remove old jobs first.'
+      )
+    const group = randomUUID().slice(0, 12)
+    for (const document of input.documents)
+      queue.jobs.push({
+        id: randomUUID().slice(0, 12),
+        thread,
+        kind: 'batch',
+        batch: { group, action, file: document.name },
+        state: 'queued',
+        createdAt: this.now(),
+        updatedAt: this.now(),
+        input: {
+          ...input,
+          images: [],
+          documents: [document],
+          memories: [],
+          prompt: `Process only the attached document ${document.name}. ${action === 'summarize' ? 'Provide a standalone summary, decisions and uncertainties.' : action === 'extract' ? 'Extract the requested fields with page/section evidence and mark missing values.' : 'Create a structured Markdown table with evidence and uncertainty.'} User instructions: ${input.prompt}`
+        },
+        result: null,
+        error: '',
+        delivery: 'pending',
+        attempts: 0,
+        nextDelivery: 0
+      })
+    if (this.bytes(queue) > this.config.maxJobBytes)
+      throw new UserError(
+        'Batch exceeds the queue payload budget. Use fewer or smaller files.'
+      )
+    this.save(owner, queue)
+    return group
+  }
   cancel(owner: string, id: string): void {
     const queue = this.get(owner)
     const job = queue.jobs.find(item => item.id === id)

@@ -195,6 +195,8 @@ export class Productivity {
           ) === index
       )
       .forEach(file => add('document', `File: ${file.name}`, file))
+    if (request.summary)
+      add('summary', 'Earlier-history recap (extractive)', request.summary)
     request.memories.forEach((note, index) =>
       add('memory', `Note ${index + 1}: ${note.slice(0, 60)}`, note)
     )
@@ -215,6 +217,7 @@ export class Productivity {
       thread,
       revision,
       prompt: request.prompt,
+      ...(request.summary !== undefined ? { summary: request.summary } : {}),
       analysisOnly: request.analysisOnly,
       expiresAt: this.now() + 600000,
       parts
@@ -223,6 +226,13 @@ export class Productivity {
     state.draft = draft
     this.save(owner, state)
     return structuredClone(draft)
+  }
+  setEstimate(owner: string, estimate: number): void {
+    const state = this.get(owner)
+    if (state.draft) {
+      state.draft.estimate = estimate
+      this.save(owner, state)
+    }
   }
   draft(
     owner: string,
@@ -271,6 +281,7 @@ export class Productivity {
       memories: [],
       instructions: '',
       history: [],
+      ...(draft.summary !== undefined ? { summary: '' } : {}),
       references: '',
       analysisOnly: draft.analysisOnly
     }
@@ -287,6 +298,7 @@ export class Productivity {
         request.memories.push(part.value as string)
       else if (part.kind === 'instructions')
         request.instructions = part.value as string
+      else if (part.kind === 'summary') request.summary = part.value as string
       else request.references = part.value as string
     }
     this.discard(owner)
@@ -304,6 +316,9 @@ export class Productivity {
     state.feedback = state.feedback.filter(item => item.thread !== thread)
     if (state.draft?.thread === thread) state.draft = null
     this.save(owner, state)
+  }
+  refresh(owner: string): void {
+    this.cache.delete(owner)
   }
   erase(owner: string): void {
     this.store?.deleteRecord('productivity', owner)

@@ -206,6 +206,7 @@ export class ProCommands {
       case 'data':
         await ctx.file(
           this.exports.json({
+            archiveVersion: 1,
             profile: this.profiles.get(ctx.owner),
             workspace: this.workspaces.get(ctx.owner),
             histories: this.conversations.owned(ctx.owner),

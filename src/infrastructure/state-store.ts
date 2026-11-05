@@ -120,6 +120,28 @@ export class SQLiteStateStore implements StateStore {
       throw error
     }
   }
+  commitImport(
+    owner: string,
+    profile: Profile,
+    sessions: [string, Session][],
+    records: [string, unknown][]
+  ): void {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.putProfile(owner, profile)
+      for (const [key, session] of sessions)
+        this.db
+          .prepare(
+            'INSERT OR REPLACE INTO sessions (key, data, touched) VALUES (?, ?, ?)'
+          )
+          .run(key, JSON.stringify(session), Date.now())
+      for (const [scope, value] of records) this.putRecord(scope, owner, value)
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
   close(): void {
     this.db.close()
   }

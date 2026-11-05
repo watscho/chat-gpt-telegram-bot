@@ -2,6 +2,13 @@
 
 The bot works in private chats for allowlisted users only. Features use the OpenAI API and incur provider charges. Pro refers to this project's feature set.
 
+## Quick navigation
+
+- Use `/guide` for a button menu grouped by goal, or `/settings` to change preferences.
+- Start with [tasks and deadlines](#tasks-and-deadlines), [batch document work](#batch-document-work), or [data transfer](#move-your-data-to-another-installation).
+- Review [cost confirmations](#estimates-before-expensive-work) before starting images or background jobs.
+- Inspect [context](#inspect-and-exclude-context-before-generation), [recaps and quoted answers](#recaps-and-replies-to-specific-answers), and [project glossaries](#project-glossary) when an answer needs better grounding.
+
 ## Conversations and search
 
 Send a text or voice message. For voice messages, the bot first displays the transcript, then its answer. The response language follows your request.
@@ -22,7 +29,7 @@ Send a photo with a caption such as "What is in this picture?" or "Read the text
 - `/edit instructions` modifies an image in the conversation context.
 - Reply to a specific photo or generated PNG with `/edit …` to select that source.
 
-Commands also work in photo captions. Natural requests such as "Create an image" and "Replace the background" can invoke generation. Results arrive as original PNG files. High quality is the default. Editing is generative, so exact preservation of every pixel is not guaranteed.
+Commands also work in photo captions. Use `/image` or `/edit` and confirm the estimate/context preview to start generation with the default settings. Automatic image tools are available only when the operator explicitly disables the confirmation guard. Results arrive as original PNG files. High quality is the default. Editing is generative, so exact preservation of every pixel is not guaranteed.
 
 JPEG, PNG and static WebP are supported. You can send multiple references as an album. The bot collects updates for 750 ms; late items may receive a busy response. For predictable sequential uploads, wait for a reply after each file.
 
@@ -65,7 +72,7 @@ In a normal production setup, SQLite stores data across restarts. By default, hi
 
 Explicit requests such as "remember: …" and "forget …" also work. After "forget," supply a note number or its exact text; "forget all" removes all saved notes.
 
-Saved notes are available across your conversations. The bot does not automatically save facts from ordinary chat. Other users cannot access your notes. `/reset` preserves saved notes. `/forget` removes a saved note but does not change earlier answers that may mention it; clear the relevant conversations when necessary.
+Saved notes are available across your conversations. The bot does not automatically create explicit saved notes from ordinary chat. A separate session recap can quote excerpts from trimmed turns; inspect it with `/recap`. Other users cannot access your notes. `/reset` preserves saved notes. `/forget` removes a saved note but does not change earlier answers that may mention it; clear the relevant conversations when necessary.
 
 ## Voice replies
 
@@ -162,6 +169,8 @@ Comparison requires at least two document references from retained history, sele
 Quality choices: `low`, `medium`, `high`, `auto`. Sizes: `auto`, `1024x1024`, `1536x1024`, `1024x1536`. Image-bearing answers also offer variation, previous-version and quick quality/size controls. A variation requests another generative edit; it is paid. Previous version and `/revert` choose a retained source for the next edit, rather than deleting later history or regenerating lost pixels. An explicitly attached/replied image takes precedence. Once an image expires or is evicted, upload it again.
 
 ## Background jobs
+
+With the default confirmation guard, `/job` first shows a configured cost preview. Confirm it to queue the job; Cancel makes no paid call.
 
 ```text
 /job research Find primary sources on this question.
@@ -297,3 +306,94 @@ The preview itself makes no model call. `/context show ID` displays text or file
 Send consumes the draft once and uses normal quotas; Cancel makes no provider call. Drafts expire after ten minutes, are owner/conversation-bound, and reject a changed history revision. A stopped/failed confirmed request needs a new preview. Another preview replaces the previous one. Snapshot data can remain after a source file/project is removed; cancel it or create a new preview to reflect those changes. Expired snapshots are removed on owner access, without an exact-time erasure guarantee.
 
 Selections apply to this request only. Excluding context does not rewrite stored conversation history or globally delete a note/file. Use the existing clear/delete/erase commands for that purpose. `/data` includes templates, library text, collections, feedback and any current draft; `/erase confirm` removes them along with other owner content.
+
+## Start with the workflow menu
+
+`/guide` opens sections for getting started, tasks, context, documents, projects, costs and data transfer. `/help` shows the command reference and the same menu. Each section includes a short example. Use `/settings` for preferences; use `/guide` to find the right action.
+
+## Tasks and deadlines
+
+```text
+/task add Review the contract
+/task add Send the draft | 2027-01-15 09:00
+/tasks
+/tasks all 2
+/task done task-id
+/task open task-id
+/task due task-id | 2027-01-16 10:00
+/task due task-id | none
+/task delete task-id
+[reply to a text message] /task fromreply
+```
+
+Tasks are local records, not model-generated promises. You can also reply to a forwarded-summary answer and use `/task fromreply` to save its selected text as an action, then edit its deadline with `/task due`. Creation/status/deletion do not call the model. Lists show eight tasks per page, with navigation and Done buttons. `/tasks` shows the active conversation; `/tasks all` spans your conversations. Task titles are limited to 1000 characters; longer selected passages are clipped when converted into a task.
+
+Deadlines use your current `/timezone` and reject invalid, past, ambiguous or nonexistent local times. Due reminders require the bot to be running. A Done button marks the task complete; reopening an already reminded task does not automatically notify again—set a new deadline to rearm it. Delivery retries at most three times with one-minute backoff, and failure status remains visible. A crash can duplicate delivery. No model/API generation call is made for a task reminder.
+
+Up to 100 tasks are retained per owner, including completed ones. Delete old tasks to free slots. Reset/delete clears that conversation's tasks, quote mappings and pending work previews. History TTL alone does not delete tasks. `/data` exports tasks; `/erase confirm` removes them. Archive import restores tasks without deadlines, so review them before rearming reminders.
+
+## Recaps and replies to specific answers
+
+When history limits remove old complete turns, the bot creates a local extractive recap containing bounded decision/constraint/question/context excerpts. `/recap` shows it; `/recap clear` removes it without clearing retained turns. This is quoted, unverified content—not permanent saved memory or a semantic AI summary. There is no extra paid summarization request. At most three recent excerpts of up to 300 characters are kept in each category; this cannot preserve every fact from a long conversation.
+
+Recaps share conversation expiry/reset/deletion. Failed requests do not publish a replacement recap. Normal requests can use it for continuity. Context previews expose it as a separate include/exclude control. A reviewed snapshot controls exactly what is sent: newly computed excerpts appear in the next preview rather than being inserted invisibly. Clearing recap does not prevent future trimming from creating new excerpts.
+
+Reply directly to a bot answer to clarify that exact delivered passage, even after other answers. Telegram's selected quote text is used when it exactly matches. The source must remain retained in the same selected conversation; switch back to it when needed. Mappings cover the last 100 delivered text chunks per owner and are not restored across archive transfers. Older/unmapped/expired answers require you to paste the relevant text explicitly. Text from another person can be selected for `/task fromreply`, but is not silently treated as a trusted bot answer.
+
+## Project glossary
+
+```text
+/project use project-id
+/glossary set ProductName | Preserve this spelling
+/glossary set invoice | Use the preferred translation for this project
+/glossary list
+/glossary remove invoice
+```
+
+A glossary belongs to the selected project. It supplies explicit spelling/translation preferences for answers and a bounded hint for incoming voice transcription. It does not rewrite old transcripts or guarantee recognition/translation. Up to 100 single-line entries and 4000 combined characters are stored per project; term/meaning limits are 80/200 characters. Transcription receives up to 800 characters of hints, so prioritize essential names. Avoid adding secrets: these hints reach the provider when you process voice.
+
+Foreground context previews let you inspect/exclude combined mode/custom/project/glossary instructions. Background jobs resolve the origin project's current glossary when they execute, alongside their existing frozen instructions and current explicit notes. Removing a project removes its glossary. Quoted glossary text already present in answers is separate history.
+
+## Batch document work
+
+```text
+/batch summarize
+/batch extract invoice number, date, currency, total
+/batch table List obligations, deadlines and source sections
+/batch status batch-id
+/batch export batch-id
+```
+
+First upload references or attach them to a project. A batch uses 1..10 retained/project documents and shows filenames, operation count and a configured cost estimate. Confirm to queue it; Cancel makes no paid call. Admission is all-or-nothing: insufficient job slots or payload budget creates no partial batch.
+
+Each file becomes a separate durable job with a standalone summary, requested field extraction or Markdown table. Global/project notes and captured instructions apply; unrelated conversation history/recap and other batch files are excluded. Jobs run sequentially, with normal quotas and per-file statuses, and use the provider's existing file-input support. Extraction can be incomplete or wrong; missing evidence should remain explicit. There is no spreadsheet formula execution or guaranteed machine-schema extraction.
+
+`/batch status` lists constituent job IDs, filenames and execution/delivery states. `/batch export` downloads bounded JSON with retained statuses and outputs. Use `/cancel job-id`, `/result job-id` and `/job delete job-id` per file. Completed records still consume job slots. Failed/interrupted paid work is not automatically rerun. Telegram delivery retries reuse results and can duplicate after a crash.
+
+## Estimates before expensive work
+
+By default, explicit `/image`, `/edit` and ad-hoc `/job` requests require a preview/confirmation. Batches always require it. Images combine the cost preview with selectable context, so one confirmation approves both. Previews expire after ten minutes and reject changed conversations/history revisions or changed image estimates. Repeated confirmation cannot start the same preview twice.
+
+These are fixed operator estimates, not actual token billing or provider prices. A batch shows one base estimate per file; actual charges depend on the model, files, tools and outputs. Normal daily budgets/capacity are checked when work starts, so an earlier confirmation does not reserve capacity indefinitely or guarantee success. Already-started failed/cancelled work can still be billed.
+
+With the default guard, natural text requests cannot automatically invoke image generation: use `/image` or `/edit`. An operator may set `CONFIRM_EXPENSIVE_REQUESTS=false` to restore immediate explicit images/jobs and automatic image tools. Batches retain confirmation. Ordinary chat, voice transcription/narration and explicitly created recurring summaries continue under normal quotas; this is not an approval prompt for every API call.
+
+## Move your data to another installation
+
+```text
+/data
+[on the destination bot, reply to the downloaded JSON] /import
+[read the merge preview and confirm]
+/chats
+/projects
+/templates
+/tasks all
+```
+
+Treat the archive as a private file. Import requires durable storage and accepts the versioned archive plus the previous unversioned `/data` shape. Validation happens before confirmation, and merged limits are checked again at commit. Oversized archives can fail the destination's per-file or export limit; reduce unnecessary retained content before exporting again.
+
+Conversations/projects receive new IDs and an import suffix, preserving existing records and the current selection. Complete retained turns, recaps, per-conversation preferences/project links, files, notes, templates, library text, forward collections, feedback, glossaries and tasks are restored. Conflicting template names are shown and skipped. Imported forward collection mode is off. Tasks import open without deadlines; inspect them and set new due times deliberately. Image-source selection resets.
+
+Credentials, usage/quota counters, jobs/results, schedules, delivery mappings, active buttons and pending previews are not restored. Global voice, timezone and budget settings stay those of the destination. This prevents old paid jobs and reminders from firing merely because an archive was imported. Provider/Telegram copies and operator backups remain outside the import.
+
+The merge writes profile, new sessions and merged content records atomically, then refreshes local caches. It does not evict existing histories to make room. Invalid content, unsupported versions or insufficient limits reject the merge. Native database migration/durability is not certified by unit coverage; keep an operator backup before moving important data.

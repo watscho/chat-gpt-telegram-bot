@@ -266,7 +266,7 @@ void test('help and unknown commands never call the provider', async () => {
   await bot.handleUpdate(update('/help'))
   await bot.handleUpdate(update('/unknown'))
   assert.ok(replies[0]?.includes('OpenAI'))
-  assert.equal(replies[1], 'Unknown command. Use /help.')
+  assert.equal(replies.at(-1), 'Unknown command. Use /help.')
   assert.equal(model.calls.length, 0)
 })
 
@@ -437,7 +437,7 @@ void test('named conversations keep independent histories and saved memory is us
     false
   )
   await bot.handleUpdate(update('/start'))
-  assert.ok(replies.at(-1)?.includes('/search'))
+  assert.ok(replies.at(-1)?.includes('/settings'))
   await bot.handleUpdate(update('/reset'))
   assert.equal(
     store.sessions().some(([key]) => key === '42:42:1'),
@@ -1517,4 +1517,291 @@ void test('rapid forwarded batches are collected without busy loss and forwarded
   assert.match(app.model.options.at(-1)!.references!, /Second decision/)
   assert.match(app.model.options.at(-1)!.references!, /\/stop/)
   assert.ok(!app.replies.some(text => text.startsWith('Busy')))
+})
+
+void test('quoted replies target the delivered retained passage, reject wrong threads and create tasks without provider work', async () => {
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store)
+  await app.bot.handleUpdate(update('First question'))
+  await app.bot.handleUpdate(update('Second question'))
+  const flow = store.getRecord<{
+    quotes: {
+      message: number
+      thread: string
+      revision: string
+      text: string
+    }[]
+    tasks: { id: string; title: string }[]
+  }>('workflow', '42:42')!
+  const quoted = flow.quotes[0]!
+  const reply = (text: string, fragment?: string) => {
+    const item = update(text)
+    if ('message' in item)
+      Object.assign(item.message, {
+        reply_to_message: {
+          message_id: quoted.message,
+          date: 1,
+          chat: { id: 42, type: 'private' },
+          from: { id: 1, is_bot: true, first_name: 'Bot' },
+          text: quoted.text
+        },
+        ...(fragment !== undefined
+          ? { quote: { text: fragment, position: 0 } }
+          : {})
+      })
+    return item
+  }
+  await app.bot.handleUpdate(reply('Explain this passage', 'Test'))
+  assert.match(
+    app.model.options.at(-1)!.references!,
+    new RegExp(quoted.revision)
+  )
+  assert.match(app.model.options.at(-1)!.references!, /Test/)
+  const calls = app.model.calls.length
+  await app.bot.handleUpdate(reply('/task fromreply'))
+  assert.equal(app.model.calls.length, calls)
+  assert.equal(
+    store.getRecord<typeof flow>('workflow', '42:42')!.tasks[0]!.title,
+    'Test answer'
+  )
+  await app.bot.handleUpdate(reply('Wrong quote', 'not present'))
+  assert.equal(app.model.calls.length, calls)
+  await app.bot.handleUpdate(update('/new Other'))
+  await app.bot.handleUpdate(reply('Wrong thread'))
+  assert.equal(app.model.calls.length, calls)
+  const task = update('/task fromreply')
+  if ('message' in task)
+    Object.assign(task.message, {
+      reply_to_message: {
+        message_id: 99,
+        date: 1,
+        chat: { id: 42, type: 'private' },
+        from: { id: 42, is_bot: false, first_name: 'User' },
+        text: 'User-selected task'
+      }
+    })
+  await app.bot.handleUpdate(task)
+  await app.bot.handleUpdate(update('/task fromreply'))
+  assert.match(app.replies.at(-1)!, /Reply to a text/)
+  const unknown = reply('Unknown answer')
+  if ('message' in unknown && 'text' in unknown.message)
+    Object.assign(unknown.message.reply_to_message!, { message_id: 999999 })
+  await app.bot.handleUpdate(unknown)
+  assert.equal(app.model.calls.length, calls)
+})
+
+void test('glossary hints, task reminders, guide buttons and recap inspection use local workflow state', async () => {
+  let taskClock = Date.parse('2026-11-05T12:00:00Z')
+  mock.method(Date, 'now', () => taskClock)
+  const model = new FakeModel()
+  let hint = ''
+  model.transcribe = (_audio, _signal, prompt) => {
+    hint = prompt ?? ''
+    return Promise.resolve('Transcribed message')
+  }
+  const store = new MemoryStateStore(),
+    app = setup(model, 10, undefined, store)
+  await app.bot.handleUpdate(update('/guide'))
+  await app.bot.handleUpdate(callback('guide:documents'))
+  await app.bot.handleUpdate(update('/project new Work'))
+  await app.bot.handleUpdate(
+    update('/glossary set Product | Preferred spelling')
+  )
+  await app.bot.handleUpdate(update('Translate a phrase'))
+  assert.match(app.model.options.at(-1)!.instructions!, /Preferred spelling/)
+  await app.bot.handleUpdate(voiceUpdate())
+  assert.match(hint, /Preferred spelling/)
+  await app.bot.handleUpdate(update('/task add Review | 2099-01-01 09:00'))
+  taskClock = Date.parse('2099-01-01T10:00:00Z')
+  const before = app.model.calls.length
+  await app.bot.tickJobs()
+  assert.equal(app.model.calls.length, before)
+  const task = store.getRecord<{ tasks: { id: string }[] }>(
+    'workflow',
+    '42:42'
+  )!.tasks[0]!
+  await app.bot.handleUpdate(callback(`task:done:${task.id}`))
+  assert.match(app.replies.at(-1)!, /completed/)
+  await app.bot.handleUpdate(update('/project delete 1'))
+  assert.deepEqual(
+    store.getRecord<{ glossary: unknown }>('workflow', '42:42')!.glossary,
+    {}
+  )
+  await app.bot.handleUpdate(update('/recap'))
+  await app.bot.handleUpdate(update('/reset'))
+  await app.bot.handleUpdate(update('/erase confirm'))
+  assert.equal(store.getRecord('workflow', '42:42'), undefined)
+})
+
+void test('cost confirmations precede image and job execution and implicit image tools stay disabled', async () => {
+  const app = setup(undefined, 10, undefined, undefined, {
+    config: { ...config(), confirmExpensiveRequests: true }
+  })
+  await app.bot.handleUpdate(update('/image A portrait'))
+  assert.equal(app.model.calls.length, 0)
+  assert.ok(app.replies.at(-1)!.includes('estimated cost'))
+  const draft = button(app, 'context:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`context:${draft}:send`))
+  assert.equal(app.model.calls.length, 1)
+  assert.equal(app.model.options.at(-1)!.action, 'generate')
+  await app.bot.handleUpdate(update('A plain request'))
+  assert.equal(app.model.options.at(-1)!.enableImages, false)
+  await app.bot.handleUpdate(update('/context /image Another portrait'))
+  const next = button(app, 'context:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`context:${next}:cancel`))
+  assert.equal(app.model.calls.length, 2)
+  await app.bot.handleUpdate(update('/job research Find evidence'))
+  assert.equal(app.model.calls.length, 2)
+  const approval = button(app, 'work:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`work:${approval}:confirm`))
+  await app.bot.tickJobs()
+  assert.equal(app.model.calls.length, 3)
+})
+
+void test('batch files run as separate confirmed jobs and imported archives refresh in-memory views', async () => {
+  const store = new MemoryStateStore()
+  const wire = JSON.stringify({
+    archiveVersion: 1,
+    profile: {
+      threads: [{ id: '1', title: 'Imported' }],
+      memories: ['Imported note']
+    },
+    workspace: { projects: [], threads: {} },
+    histories: [],
+    extensions: {
+      productivity: {
+        templates: [{ name: 'imported', body: 'Imported prompt' }]
+      }
+    }
+  })
+  const app = setup(undefined, 10, undefined, store, {
+    downloadDocument: (_url, name) =>
+      Promise.resolve({
+        name,
+        mime: name.endsWith('.json') ? 'application/json' : 'application/pdf',
+        data: name.endsWith('.json')
+          ? Buffer.from(wire).toString('base64')
+          : 'JVBERi0='
+      })
+  })
+  const replied = (text: string, name: string) => {
+    const item = update(text)
+    if ('message' in item)
+      Object.assign(item.message, {
+        reply_to_message: {
+          message_id: 88,
+          date: 1,
+          chat: { id: 42, type: 'private' },
+          document: {
+            file_id: name,
+            file_unique_id: name,
+            file_name: name,
+            mime_type: 'application/octet-stream'
+          }
+        }
+      })
+    return item
+  }
+  await app.bot.handleUpdate(update('/project new Files'))
+  await app.bot.handleUpdate(replied('/project attach', 'a.pdf'))
+  await app.bot.handleUpdate(replied('/project attach', 'b.pdf'))
+  await app.bot.handleUpdate(update('/batch summarize'))
+  assert.equal(app.model.calls.length, 0)
+  const approval = button(app, 'work:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`work:${approval}:confirm`))
+  await app.bot.tickJobs()
+  await app.bot.tickJobs()
+  assert.equal(app.model.calls.length, 2)
+  assert.ok(
+    app.model.calls.every(
+      messages => messages.length === 1 && messages[0]!.documents!.length === 1
+    )
+  )
+  const group = store
+    .getRecord<{ jobs: { batch?: { group: string } }[] }>('queue', '42:42')!
+    .jobs.find(job => job.batch)!.batch!.group
+  await app.bot.handleUpdate(update(`/batch export ${group}`))
+  await app.bot.handleUpdate(replied('/import', 'my-data.json'))
+  const imported = button(app, 'work:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`work:${imported}:confirm`))
+  await app.bot.handleUpdate(update('/chats'))
+  assert.match(app.replies.at(-1)!, /Imported/)
+  await app.bot.handleUpdate(update('/templates'))
+  assert.match(app.replies.at(-1)!, /imported/)
+})
+
+void test('legacy histories and drafts remain private and excluded recap defaults never leak after an upgrade', async () => {
+  const store = new MemoryStateStore()
+  store.putSession('42:42:1', {
+    messages: [
+      { role: 'user', content: 'Legacy' },
+      { role: 'assistant', content: 'Legacy answer' }
+    ],
+    expiresAt: Date.now() + 100000
+  })
+  const app = setup(undefined, 10, undefined, store)
+  const item = update('Explain old text')
+  if ('message' in item)
+    Object.assign(item.message, {
+      reply_to_message: {
+        message_id: 77,
+        date: 1,
+        chat: { id: 42, type: 'private' },
+        from: { id: 1, is_bot: true, first_name: 'Bot' },
+        text: 'Legacy answer'
+      }
+    })
+  await app.bot.handleUpdate(item)
+  assert.match(app.replies.at(-1)!, /not retained/)
+  const fresh = new MemoryStateStore()
+  fresh.putRecord('productivity', '42:42', {
+    collecting: {},
+    templates: [],
+    forwards: {},
+    feedback: [],
+    draft: {
+      token: 'old',
+      thread: '1',
+      revision: undefined,
+      expiresAt: Date.now() + 100000,
+      prompt: 'Confirmed legacy request',
+      parts: [],
+      analysisOnly: false
+    }
+  })
+  const migrated = setup(undefined, 10, undefined, fresh)
+  await migrated.bot.handleUpdate(callback('context:old:send'))
+  assert.equal(migrated.model.options[0]!.summary, '')
+})
+
+void test('stale image estimates from persisted previews cannot bypass the current cost confirmation', async () => {
+  const store = new MemoryStateStore()
+  store.putRecord('productivity', '42:42', {
+    collecting: {},
+    templates: [],
+    forwards: {},
+    feedback: [],
+    draft: {
+      token: 'old-price',
+      thread: '1',
+      expiresAt: Date.now() + 100000,
+      prompt: '/image A portrait',
+      parts: [],
+      analysisOnly: false,
+      estimate: 1
+    }
+  })
+  const app = setup(undefined, 10, undefined, store, {
+    config: { ...config(), confirmExpensiveRequests: true }
+  })
+  await app.bot.handleUpdate(callback('context:old-price:send'))
+  assert.equal(app.model.calls.length, 0)
+  assert.match(app.replies.at(-1)!, /cost changed/)
+})
+
+void test('import without a replied archive stops locally with navigation guidance', async () => {
+  const app = setup(undefined, 10, undefined, new MemoryStateStore())
+  await app.bot.handleUpdate(update('/import'))
+  assert.equal(app.model.calls.length, 0)
+  assert.match(app.replies.at(-1)!, /Reply to a \/data JSON archive/)
 })

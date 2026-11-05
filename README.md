@@ -55,7 +55,7 @@ npm start
 
 Voice replies start **off**. Every outgoing voice message is labelled **AI-generated voice**. Text answers remain available even if narration fails. Long answers are not silently truncated for speech: use `/speak` with a shorter passage.
 
-Natural-language requests can invoke image generation or web search automatically. Explicit commands provide a predictable way to request them. `remember: …` and `forget …` manage saved notes without a model call. The bot never extracts long-term notes automatically from ordinary conversation.
+Natural-language requests can invoke web search within quotas. Image generation/editing uses explicit `/image` or `/edit` and a cost/context confirmation by default; `CONFIRM_EXPENSIVE_REQUESTS=false` restores automatic image tools and immediate image/job requests. Batches always require confirmation. `remember: …` and `forget …` manage saved notes without a model call. The bot never creates explicit long-term notes automatically. A separate bounded extractive recap can retain excerpts from trimmed history within that session’s TTL.
 
 ## Photos and documents
 
@@ -88,6 +88,21 @@ Saved conversation names, notes and voice settings survive restarts. Retained me
 Foreground updates are serialized per user. A background job locks its conversation; foreground work in another conversation can proceed within the global concurrency cap. `/stop` remains available during foreground work. Overlapping foreground updates receive a busy response. Provider failures do not commit partial turns. Successful complete-turn writes and capacity evictions are transactional in SQLite. Text and media have bounded request/history budgets. Daily quotas and configurable estimated-spend reservations apply separately; see the Pro workspace commands below. Estimates are not provider invoices or a hard billing cap.
 
 Text, audio, attached files, saved notes and relevant history are sent to OpenAI for requested processing. Search may send generated queries to search providers. Responses use `store: false`; this does not establish zero retention by OpenAI or Telegram. Requests and raw provider exceptions are not logged. The SQLite file is access-restricted but is **not encrypted at rest** by this application.
+
+## Find your workflow
+
+Open `/guide` (also shown by `/help`) for buttons grouped by tasks, context, documents, projects, costs and data transfer.
+
+| Goal                               | Start here                                                                      |
+| ---------------------------------- | ------------------------------------------------------------------------------- |
+| Track an action                    | `/task add Review draft`, `/tasks`, Done button                                 |
+| Continue long conversations        | `/recap`; reply to a specific retained bot answer                               |
+| Keep names/translations consistent | `/glossary set term \| preferred meaning` in a selected project                 |
+| Process multiple documents         | `/batch summarize`, `/batch extract fields`, `/batch table instructions`        |
+| Review expensive work              | Confirm the configured estimate before explicit images/jobs/batches             |
+| Move to another installation       | `/data`, then reply to the archive with `/import` and inspect the merge preview |
+
+See [Pro workflows and transfer limits](docs/pro-workflows.md). All tests remain unit-only; live/native behavior is not qualified by coverage.
 
 ## Pro productivity
 

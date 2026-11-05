@@ -126,3 +126,28 @@ void test('generic records are scoped and content erasure preserves only operati
   assert.equal(calls.at(-1)?.sql, 'ROLLBACK')
   fail = false
 })
+
+void test('archive merge commits profile, sessions and scoped records atomically with rollback on failure', () => {
+  const store = new SQLiteStateStore(':memory:'),
+    profile = {
+      active: '1',
+      nextId: 2,
+      threads: [{ id: '1', title: 'Main' }],
+      memories: [],
+      voice: 'off' as const
+    }
+  calls.length = 0
+  store.commitImport(
+    'a',
+    profile,
+    [['a:2', { messages: [], expiresAt: 10 }]],
+    [['workspace', { projects: [] }]]
+  )
+  assert.equal(calls[0]!.sql, 'BEGIN IMMEDIATE')
+  assert.equal(calls.at(-1)!.sql, 'COMMIT')
+  assert.ok(calls.some(item => item.values[0] === 'a:2'))
+  fail = true
+  assert.throws(() => store.commitImport('a', profile, [], []))
+  assert.equal(calls.at(-1)!.sql, 'ROLLBACK')
+  fail = false
+})

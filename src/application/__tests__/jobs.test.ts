@@ -292,3 +292,58 @@ void test('idle worker ticks avoid repeated store scans or unchanged queue write
   assert.equal(app.queue.get('a').jobs.length, 1)
   assert.equal(app.queue.get('a').schedules[1]?.dueAt, app.now())
 })
+
+void test('batch enqueue is all-or-nothing, keeps per-file metadata and obeys capacity and payload bounds', () => {
+  const settings = config(),
+    store = new MemoryStateStore(),
+    jobs = new Jobs(
+      settings,
+      {
+        allowed: () => true,
+        available: () => true,
+        input: () => {
+          throw new Error('unused')
+        },
+        execute: () => Promise.resolve({ text: 'Result', images: [] }),
+        deliver: () => Promise.resolve()
+      },
+      store
+    )
+  const input = {
+    prompt: 'Requested fields',
+    documents: [
+      { name: 'a.txt', mime: 'text/plain', data: 'YQ==' },
+      { name: 'b.txt', mime: 'text/plain', data: 'Yg==' }
+    ],
+    images: [],
+    instructions: '',
+    memories: ['Do not snapshot notes']
+  }
+  for (const [action, value] of [
+    ['bad', input],
+    ['summarize', { ...input, documents: [] }],
+    [
+      'extract',
+      {
+        ...input,
+        documents: Array.from({ length: 11 }, () => input.documents[0]!)
+      }
+    ],
+    ['table', { ...input, prompt: 'x'.repeat(1001) }]
+  ] as [string, JobInput][])
+    assert.throws(() => jobs.enqueueBatch('a', '1', action, value))
+  for (const action of ['summarize', 'extract', 'table']) {
+    const group = jobs.enqueueBatch('a', '1', action, input)
+    assert.equal(
+      jobs.get('a').jobs.filter(job => job.batch?.group === group).length,
+      2
+    )
+  }
+  assert.deepEqual(jobs.get('a').jobs[0]!.input.memories, [])
+  settings.maxJobs = 6
+  assert.throws(() => jobs.enqueueBatch('a', '1', 'summarize', input))
+  settings.maxJobs = 20
+  settings.maxJobBytes = 1
+  assert.throws(() => jobs.enqueueBatch('a', '1', 'summarize', input))
+  assert.equal(jobs.get('a').jobs.length, 6)
+})

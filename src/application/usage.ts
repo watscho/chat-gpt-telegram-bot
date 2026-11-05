@@ -36,7 +36,8 @@ export class UsageLedger {
   }
   reserve(
     owner: string,
-    kind: UsageKind
+    kind: UsageKind,
+    allowImages = true
   ): {
     options: {
       enableImages: boolean
@@ -66,7 +67,8 @@ export class UsageLedger {
           ? this.config.estimateTranscription
           : this.config.estimateChat
     let enableImages =
-      kind === 'image' || (kind === 'auto' && remainingImages > 0)
+      kind === 'image' ||
+      (kind === 'auto' && allowImages && remainingImages > 0)
     let enableSearch =
       kind === 'search' || (kind === 'auto' && remainingSearches > 0)
     if (

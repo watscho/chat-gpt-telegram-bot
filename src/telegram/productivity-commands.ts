@@ -30,7 +30,10 @@ export class ProductivityCommands {
     private readonly workspaces: Workspaces,
     private readonly conversations: Conversations,
     private readonly defaultModel: string,
-    private readonly now = Date.now
+    private readonly now = Date.now,
+    private readonly imageEstimate: (
+      prompt: string
+    ) => number | undefined = () => undefined
   ) {}
   private revision(ctx: ProductivityContext): string | undefined {
     return this.conversations.history(`${ctx.owner}:${ctx.thread}`).at(-1)?.id
@@ -45,6 +48,11 @@ export class ProductivityCommands {
       this.revision(ctx),
       request
     )
+    const estimate = this.imageEstimate(request.prompt)
+    if (estimate !== undefined) {
+      this.data.setEstimate(ctx.owner, estimate)
+      draft.estimate = estimate
+    }
     await this.showDraft(ctx, draft, 0)
   }
   private async showDraft(
@@ -65,7 +73,7 @@ export class ProductivityCommands {
       callback_data: `context:${draft.token}:${action}`
     })
     await ctx.text(
-      `Review before sending. Request: ${draft.prompt}\n${items.map(part => `${part.enabled ? '[x]' : '[ ]'} ${part.id}: ${part.label}`).join('\n')}\nUse /context show ID for full text or file metadata. History text and all deduplicated attachments are separate controls. Preview expires after 10 minutes.`,
+      `Review before sending.${draft.estimate !== undefined ? ` Configured estimated cost: $${(draft.estimate / 1000000).toFixed(6)}; actual provider charges may differ.` : ''} Request: ${draft.prompt}\n${items.map(part => `${part.enabled ? '[x]' : '[ ]'} ${part.id}: ${part.label}`).join('\n')}\nUse /context show ID for full text or file metadata. History text and all deduplicated attachments are separate controls. Preview expires after 10 minutes.`,
       {
         inline_keyboard: [
           ...items.map(part => [
@@ -161,14 +169,25 @@ export class ProductivityCommands {
   ): Promise<PreparedRequest | true | false> {
     const [scope, token, action, ...args] = value.split(':')
     if (scope === 'context') {
-      this.data.draft(ctx.owner, ctx.thread, token!, this.revision(ctx))
-      if (action === 'send')
+      const draft = this.data.draft(
+        ctx.owner,
+        ctx.thread,
+        token!,
+        this.revision(ctx)
+      )
+      if (action === 'send') {
+        const estimate = this.imageEstimate(draft.prompt)
+        if (estimate !== undefined && estimate !== draft.estimate)
+          throw new UserError(
+            'The estimated cost changed. Create a new preview before confirming.'
+          )
         return this.data.consume(
           ctx.owner,
           ctx.thread,
           token!,
           this.revision(ctx)
         )
+      }
       if (action === 'cancel') {
         this.data.discard(ctx.owner)
         await ctx.text('Context preview cancelled. No provider call was made.')

@@ -443,3 +443,43 @@ void test('per-conversation models and labelled retrieval evidence reach the sta
     references: '[L1] Terms.pdf (page 2): Evidence'
   })
 })
+
+void test('extractive recap is labelled as untrusted input and project spellings become transcription hints', async () => {
+  let calls = 0
+  const model = modelWith((_url, init) => {
+    calls++
+    if (init!.body instanceof FormData) {
+      const prompt = init!.body.get('prompt')
+      assert.equal(typeof prompt, 'string')
+      assert.match(prompt as string, /Brand/)
+      return Promise.resolve(Response.json({ text: 'Brand' }))
+    }
+    const body = JSON.parse(init!.body as string) as {
+      input: { content: string }[]
+    }
+    assert.match(body.input[0]!.content, /untrusted excerpts/)
+    return Promise.resolve(
+      Response.json({
+        status: 'completed',
+        output: [
+          {
+            type: 'message',
+            content: [{ type: 'output_text', text: 'Answer', annotations: [] }]
+          }
+        ]
+      })
+    )
+  })
+  await model.reply([{ role: 'user', content: 'Continue' }], {
+    summary: 'Decisions from earlier turns'
+  })
+  assert.equal(
+    await model.transcribe(
+      new Uint8Array([1]),
+      undefined,
+      'Brand: Preferred spelling'
+    ),
+    'Brand'
+  )
+  assert.ok(calls >= 2)
+})

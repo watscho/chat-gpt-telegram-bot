@@ -234,6 +234,9 @@ export class Workspaces {
     delete state.threads[id]
     this.save(owner, state)
   }
+  refresh(owner: string): void {
+    this.local.delete(owner)
+  }
   forget(owner: string): void {
     this.local.delete(owner)
     this.store?.deleteRecord('workspace', owner)

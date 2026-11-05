@@ -1,5 +1,20 @@
 # Changelog
 
+## 5.0.0 — Guided workflows and portable data
+
+- Add local actionable tasks with status/deadline controls, paginated lists, Done buttons and bounded reminder delivery retries.
+- Add automatic inspectable extractive recaps for trimmed conversation turns, independently selectable in context previews.
+- Ground replies in a specific retained delivered bot answer or matching selected text fragment.
+- Add project glossaries for answer/translation preferences and bounded incoming-transcription hints.
+- Add confirmed per-file batch summaries, extraction and tables, atomic queue admission, progress and result exports.
+- Add default estimated-cost/context confirmations for explicit images and ad-hoc jobs, with single-use expiry/revision guards and changed-estimate rejection.
+- Add versioned data archives, validated merge previews, fresh conversation/project IDs, explicit template conflicts and atomic imports with cache refresh.
+- Restore portable preferences, complete histories/recaps, files, notes, templates, library, collections, feedback, dictionaries and tasks without replaying paid jobs, schedules or notifications.
+- Add `/guide` navigation and expand setup, user, configuration, architecture, security and operations documentation.
+- Maintain adjacent unit-only tests and the unchanged 100% executable source line/branch/function gate; no live/native, browser, Docker or costly tests are added.
+
+Breaking behavior: `CONFIRM_EXPENSIVE_REQUESTS=true` enables confirmation for `/image`, `/edit` and ad-hoc `/job`. Ordinary requests cannot invoke image tools implicitly under this default; use explicit commands. Operators can set the flag to `false` to restore prior immediate image/job behavior. Batches always require confirmation. Recaps can retain excerpts from trimmed turns within session TTL; inspect/clear them explicitly. SQLite remains schema 2.
+
 ## 4.1.0 — Pro productivity
 
 - Add retained-turn inspection, preserved conversation branches and revised requests with original references and copied preferences.

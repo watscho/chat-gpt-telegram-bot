@@ -63,3 +63,15 @@ Local retrieval chunks text with bounded overlap, ranks distinct lexical query t
 Context drafts snapshot selected content before paid work. History text is stripped of attachment fields and all current/historical payloads become independent deduplicated controls. Confirmation validates owner/thread/token/TTL/revision, consumes once, and uses `ReplyOptions.contextHistory` for provider input while retaining the original stored history. Removing context from one call does not delete earlier content. Reference excerpts are a distinct untrusted user-input item in Responses. Conversation model overrides remain configurable and do not change speech/image models.
 
 Collections require explicit opt-in and forward metadata; only text/captions and Telegram message IDs are retained. Feedback uses answer-revision-bound buttons and stores a bounded local vote without copying answer text or contacting providers. Menus use short-lived per-owner tokens and conversation binding. All new service/parser/Telegram contracts use adjacent unit tests; no native parser or live-provider qualification is implied.
+
+## Tasks, recaps, quoted answers and transfer
+
+`workflow.ts` owns bounded tasks, project glossaries, delivered-answer mappings and guarded work/import approvals in the `workflow` scope. Its worker retries Telegram notification delivery only. Owner discovery is cached; idle ticks do not repeatedly scan/rewrite unchanged persistent records. `workflow-commands.ts` exposes paginated task lists, guided navigation, glossary/recap commands, batch work and import previews.
+
+`recap.ts` deterministically categorizes bounded excerpts of trimmed complete turns. Conversations construct a provisional recap before a normal provider call and publish updated recap/history only after success. Reviewed requests use their explicitly selected summary string; they do not gain hidden context. The session recap is distinct from explicit profile/project memory.
+
+Quoted-answer mappings are created from successfully delivered answer chunks (including edited streaming previews), scoped by owner/conversation/revision and checked against retained history. Exact Telegram quote fragments must match. Referenced text is supplied as untrusted source context, not a system instruction.
+
+Batch admission validates all files/slots/payloads before one queue write. Each job retains batch/file metadata after input cleanup. Execution uses one document with an empty history/recap and normal current notes/glossary; paid retry/recovery and delivery contracts remain unchanged.
+
+`archive.ts` validates an unknown JSON object into canonical portable records, remaps ownership/IDs, merges conflicts conservatively and rechecks destination/global budgets. `StateStore.commitImport` writes profile, new sessions and merged scopes in one transaction, without restoring queue/usage state or deleting existing content. Cache refresh occurs after commit. Unit tests mock SQLite and assert transaction boundaries; they do not exercise a real database.

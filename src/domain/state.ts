@@ -1,7 +1,9 @@
+import type { Recap } from './workflow.js'
 import type { Message } from './conversation.js'
 
 export interface Session {
   messages: Message[]
+  recap?: Recap
   expiresAt: number
 }
 export interface Profile {
@@ -22,5 +24,11 @@ export interface StateStore {
   records<T>(scope: string): [string, T][]
   deleteRecord(scope: string, key: string): void
   deleteOwner(key: string): void
+  commitImport(
+    owner: string,
+    profile: Profile,
+    sessions: [string, Session][],
+    records: [string, unknown][]
+  ): void
   close(): void
 }

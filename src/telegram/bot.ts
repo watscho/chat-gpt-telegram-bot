@@ -1,3 +1,6 @@
+import { Workflow } from '../application/workflow.js'
+import { ArchiveImport } from '../application/archive.js'
+import { WorkflowCommands, type WorkflowContext } from './workflow-commands.js'
 import { Productivity } from '../application/productivity.js'
 import { Library } from '../application/library.js'
 import { extractDocumentText } from '../infrastructure/document-text.js'
@@ -85,6 +88,8 @@ export function createBot({
   const usage = new UsageLedger(config, workspaces, store)
   const controls = new ResponseControls()
   const productivity = new Productivity(store)
+  const workflow = new Workflow(store)
+  const importer = store ? new ArchiveImport(config, store) : undefined
   const library = new Library(extractText, store)
   const advanced = new ProductivityCommands(
     productivity,
@@ -92,7 +97,13 @@ export function createBot({
     profiles,
     workspaces,
     conversations,
-    config.chatModel
+    config.chatModel,
+    Date.now,
+    prompt =>
+      config.confirmExpensiveRequests &&
+      /^\/(image|edit)(?:@\w+)?(?:\s|$)/i.test(prompt)
+        ? config.estimateChat + config.estimateImage
+        : undefined
   )
   const exporter = new HistoryExport(config.maxExportBytes)
   const sessionLocks = new Set<string>()
@@ -185,6 +196,7 @@ export function createBot({
             ? { chatModel: workspaces.thread(owner, job.thread).model! }
             : {}),
           documents: job.input.documents,
+          ...(job.kind === 'batch' ? { contextHistory: [], summary: '' } : {}),
           memories: [
             ...profiles.get(owner).memories,
             ...(workspaces
@@ -192,7 +204,12 @@ export function createBot({
               .projects.find(project => project.id === job.input.project)
               ?.notes ?? [])
           ],
-          instructions: job.input.instructions,
+          instructions: [
+            job.input.instructions,
+            workflow.terms(owner, job.input.project ?? null)
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
           search: job.kind === 'research',
           enableImages: false,
           enableSearch: job.kind === 'research',
@@ -256,7 +273,40 @@ export function createBot({
     store
   )
   jobs.recover()
-  bot.tickJobs = () => jobs.tick()
+  const flowCommands = new WorkflowCommands(
+    workflow,
+    jobs,
+    workspaces,
+    conversations,
+    config,
+    importer
+  )
+  bot.tickJobs = async () => {
+    await jobs.tick()
+    await workflow.tick(
+      owner => {
+        const parts = owner.split(':')
+        return (
+          parts.length === 2 &&
+          parts[0] === parts[1] &&
+          config.allowedUsers.has(Number(parts[1]))
+        )
+      },
+      async (owner, task) => {
+        await bot.telegram.sendMessage(
+          Number(owner.split(':')[0]),
+          `Task due · conversation ${task.thread}\n${task.title}`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: 'Done', callback_data: `task:done:${task.id}` }]
+              ]
+            }
+          }
+        )
+      }
+    )
+  }
   bot.stopJobs = () => jobs.stop()
   const pro = new ProCommands(
     profiles,
@@ -353,6 +403,7 @@ export function createBot({
   })
 
   const help = [
+    'Start here: /guide opens a task-oriented command menu. /tasks, /batch, /glossary, /recap and /import extend your workflow. Images and background work show configured cost estimates before confirmation by default.',
     'Send text, voice, photos or documents (PDF, DOCX, XLSX, PPTX, TXT, MD, CSV, JSON). Captions are instructions; reply to a file/photo to select it. Reference albums are supported.',
     '/settings — button-based model/project/mode/voice/limit controls. /model ID overrides this conversation model.',
     '/turns, /branch N | title, /revise N | request — preserved dialogue branches. /templates, /template and /run — reusable prompts.',
@@ -420,12 +471,14 @@ export function createBot({
     switch (command) {
       case 'start':
       case 'help':
-        await ctx.reply(help)
+        for (const chunk of splitReply(help)) await ctx.reply(chunk)
+        await flowCommands.guide(workflowContext(ctx))
         break
       case 'reset':
         jobs.cancelThread(owner, profiles.get(owner).active)
         controls.clear(owner, false)
         productivity.deleteThread(owner, profiles.get(owner).active)
+        workflow.deleteThread(owner, profiles.get(owner).active)
         conversations.reset(sessionFor(ctx))
         await ctx.reply(
           'Conversation cleared, including photos and documents. Saved notes and other conversations are preserved.'
@@ -464,6 +517,7 @@ export function createBot({
         jobs.cancelThread(owner, argument)
         workspaces.deleteThread(owner, argument)
         productivity.deleteThread(owner, argument)
+        workflow.deleteThread(owner, argument)
         conversations.reset(`${owner}:${argument}`)
         await ctx.reply('Conversation and its history deleted.')
         break
@@ -570,6 +624,69 @@ export function createBot({
       )
     }
   }
+  const quoted = (ctx: Context): string => {
+    const message = ctx.message
+    const reply =
+      message && 'reply_to_message' in message
+        ? message.reply_to_message
+        : undefined
+    if (!reply || !('text' in reply)) return ''
+    if (reply.from?.id !== ctx.botInfo.id) return ''
+    const fragment =
+      message && 'quote' in message && message.quote
+        ? message.quote.text
+        : undefined
+    return workflow.quoted(
+      ownerFor(ctx),
+      profiles.get(ownerFor(ctx)).active,
+      reply.message_id,
+      conversations
+        .history(sessionFor(ctx))
+        .flatMap(item => (item.id ? [item.id] : [])),
+      fragment
+    )
+  }
+  const workflowContext = (ctx: Context): WorkflowContext => {
+    const owner = ownerFor(ctx),
+      thread = profiles.get(owner).active
+    return {
+      owner,
+      thread,
+      text: async (value, keyboard) => {
+        for (const chunk of splitReply(value))
+          await ctx.reply(chunk, keyboard ? { reply_markup: keyboard } : {})
+      },
+      file: async (bytes, name) => {
+        await ctx.replyWithDocument(Input.fromBuffer(Buffer.from(bytes), name))
+      },
+      document: async () => {
+        const msg = ctx.message
+        return msg && 'reply_to_message' in msg && msg.reply_to_message
+          ? (await readAttachment(ctx, msg.reply_to_message)).document
+          : undefined
+      },
+      quote: () => {
+        const specific = quoted(ctx)
+        if (specific) return specific
+        const msg = ctx.message,
+          reply =
+            msg && 'reply_to_message' in msg ? msg.reply_to_message : undefined
+        if (!reply || !('text' in reply))
+          throw new UserError('Reply to a text message with /task fromreply.')
+        return `Quoted message:\n${reply.text}`
+      },
+      input: prompt => frozenInput(owner, thread, prompt),
+      imported: () => {
+        profiles.forgetOwner(owner)
+        workspaces.refresh(owner)
+        productivity.refresh(owner)
+        library.refresh(owner)
+        workflow.refresh(owner)
+        conversations.refresh()
+        controls.clear(owner, false)
+      }
+    }
+  }
   const productivityContext = (ctx: Context): ProductivityContext => {
     const owner = ownerFor(ctx),
       thread = profiles.get(owner).active
@@ -595,9 +712,15 @@ export function createBot({
           images: [],
           documents: workspaces.project(owner, selected)?.documents ?? [],
           memories: input.memories,
-          instructions: input.instructions,
+          instructions: [
+            input.instructions,
+            workflow.terms(owner, workspaces.thread(owner, selected).project)
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
+          summary: conversations.recap(`${owner}:${selected}`),
           history: conversations.history(`${owner}:${selected}`),
-          references: '',
+          references: quoted(ctx),
           analysisOnly: false
         }
       }
@@ -612,6 +735,7 @@ export function createBot({
     prepared?: PreparedRequest
   ): Promise<void> => {
     if (!prepared && !images.length && !documents.length) {
+      if (await flowCommands.handle(workflowContext(ctx), text)) return
       if (await manage(ctx, text)) return
       const selected = profiles.get(ownerFor(ctx)).active
       const result = await advanced.handle(productivityContext(ctx), text)
@@ -645,13 +769,18 @@ export function createBot({
       extras: {
         data: () => ({
           productivity: productivity.get(owner),
-          library: library.get(owner)
+          library: library.get(owner),
+          workflow: workflow.get(owner)
         }),
         erase: () => {
           productivity.erase(owner)
           library.erase(owner)
+          workflow.erase(owner)
         },
-        deleteProject: (id: string) => library.deleteProject(owner, id)
+        deleteProject: (id: string) => {
+          library.deleteProject(owner, id)
+          workflow.deleteProject(owner, id)
+        }
       },
       text: async (value: string) => {
         for (const chunk of splitReply(value)) await ctx.reply(chunk)
@@ -742,7 +871,12 @@ export function createBot({
       throw new UserError(
         'This conversation has a background request running. Switch conversations or cancel its job.'
       )
-    if (settings.reviewContext && !ctx.state.contextApproved) {
+    const quoteReference = quoted(ctx)
+    if (
+      (settings.reviewContext ||
+        (config.confirmExpensiveRequests && action !== 'auto')) &&
+      !ctx.state.contextApproved
+    ) {
       await advanced.review(
         productivityContext(ctx),
         prepared ?? {
@@ -753,9 +887,15 @@ export function createBot({
             ...profiles.get(owner).memories,
             ...(project?.notes ?? [])
           ],
-          instructions: workspaces.instructions(owner, thread),
+          instructions: [
+            workspaces.instructions(owner, thread),
+            workflow.terms(owner, project?.id ?? null)
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
+          summary: conversations.recap(session),
           history: conversations.history(session),
-          references: '',
+          references: quoteReference,
           analysisOnly
         }
       )
@@ -797,13 +937,21 @@ export function createBot({
         ],
         documents,
         instructions:
-          prepared?.instructions ?? workspaces.instructions(owner, thread),
+          prepared?.instructions ??
+          [
+            workspaces.instructions(owner, thread),
+            workflow.terms(owner, project?.id ?? null)
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
         ...(prepared
           ? {
               contextHistory: prepared.history,
-              references: prepared.references
+              references: prepared.references,
+              summary: prepared.summary ?? ''
             }
           : {}),
+        ...(!prepared && quoteReference ? { references: quoteReference } : {}),
         ...(settings.model ? { chatModel: settings.model } : {}),
         imageQuality: settings.quality,
         imageSize: settings.size,
@@ -838,7 +986,8 @@ export function createBot({
                   ? 'image'
                   : command?.[1]?.toLowerCase() === 'search'
                     ? 'search'
-                    : 'auto'
+                    : 'auto',
+            !config.confirmExpensiveRequests || action !== 'auto'
           )
           Object.assign(options, reservation.options)
         }
@@ -863,6 +1012,10 @@ export function createBot({
         thread,
         conversations.history(session).at(-1)?.id
       )
+      const revision = conversations.history(session).at(-1)?.id
+      const rememberDelivery = (message: number, text: string) => {
+        if (revision) workflow.quote(owner, message, thread, revision, text)
+      }
       const markup = controls.buttons(token, answer.images.length > 0)
       const chunks = splitReply(answer.text)
       if (preview !== undefined) {
@@ -871,12 +1024,16 @@ export function createBot({
           .editMessageText(ctx.chat!.id, preview, undefined, first, {
             reply_markup: markup
           })
+          .then(() => rememberDelivery(preview!, first))
           .catch(async () => {
-            await ctx.reply(first, { reply_markup: markup })
+            const delivered = await ctx.reply(first, { reply_markup: markup })
+            rememberDelivery(delivered.message_id, first)
           })
       }
-      for (const chunk of chunks)
-        await ctx.reply(chunk, { reply_markup: markup })
+      for (const chunk of chunks) {
+        const delivered = await ctx.reply(chunk, { reply_markup: markup })
+        rememberDelivery(delivered.message_id, chunk)
+      }
       for (const chunk of splitReply(formatSources(answer.sources)))
         await ctx.reply(chunk)
       for (const image of answer.images)
@@ -921,6 +1078,12 @@ export function createBot({
   bot.on('callback_query', async ctx => {
     if (!('data' in ctx.callbackQuery)) {
       await ctx.answerCbQuery('Unsupported control.')
+      return
+    }
+    if (
+      await flowCommands.callback(workflowContext(ctx), ctx.callbackQuery.data)
+    ) {
+      await ctx.answerCbQuery()
       return
     }
     if (
@@ -1106,7 +1269,14 @@ export function createBot({
     try {
       text = await model.transcribe(
         audio,
-        controls.current(ownerFor(ctx))?.signal
+        controls.current(ownerFor(ctx))?.signal,
+        workflow
+          .terms(
+            ownerFor(ctx),
+            workspaces.thread(ownerFor(ctx), profiles.get(ownerFor(ctx)).active)
+              .project
+          )
+          .slice(0, 800)
       )
       transcription.finish()
     } catch (error) {

@@ -1,3 +1,4 @@
+import { compact, recapText } from './recap.js'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Config } from '../config.js'
 import type {
@@ -148,6 +149,9 @@ export class Conversations {
       )
     const session = {
       messages,
+      ...(this.sessions.get(source)?.recap
+        ? { recap: this.sessions.get(source)!.recap! }
+        : {}),
       expiresAt:
         this.sessions.get(source)?.expiresAt ??
         this.now() + this.limits.sessionTtlMs
@@ -156,6 +160,24 @@ export class Conversations {
     this.sessions.set(target, structuredClone(session))
   }
 
+  recap(key: string): string {
+    this.prune()
+    return recapText(this.sessions.get(key)?.recap)
+  }
+  clearRecap(key: string): void {
+    const session = this.sessions.get(key)
+    if (!session) return
+    const { recap: _recap, ...rest } = session
+    void _recap
+    this.store?.putSession(key, rest)
+    this.sessions.set(key, rest)
+  }
+  refresh(): void {
+    this.sessions.clear()
+    for (const [key, session] of this.store?.sessions() ?? [])
+      this.sessions.set(key, session)
+    this.prune()
+  }
   async reply(key: string, input: string): Promise<string> {
     return (await this.respond(key, input)).text
   }
@@ -207,6 +229,7 @@ export class Conversations {
         ...(documents.length ? { documents } : {})
       }
     ]
+    const removed: Message[] = []
     while (
       messages.length > 1 &&
       (messages.length > this.limits.maxHistoryTurns * 2 - 1 ||
@@ -217,8 +240,11 @@ export class Conversations {
             this.limits.maxTotalImageBytes
           ))
     ) {
-      messages.splice(0, 2)
+      removed.push(...messages.splice(0, 2))
     }
+    const provisionalRecap = removed.length
+      ? compact(this.sessions.get(key)?.recap, removed)
+      : this.sessions.get(key)?.recap
     const providerMessages =
       options.contextHistory !== undefined
         ? [...structuredClone(options.contextHistory), messages.at(-1)!]
@@ -243,7 +269,10 @@ export class Conversations {
       )
     }
     options.onStart?.()
-    const result = await this.model.reply(providerMessages, options)
+    const result = await this.model.reply(providerMessages, {
+      ...options,
+      summary: options.summary ?? recapText(provisionalRecap)
+    })
     if (options.signal?.aborted) throw new UserError('Request stopped.')
     const response: ModelReply =
       typeof result === 'string'
@@ -269,7 +298,7 @@ export class Conversations {
             this.limits.maxTotalImageBytes
           ))
     ) {
-      messages.splice(0, 2)
+      removed.push(...messages.splice(0, 2))
     }
     // Commit complete turns only after the provider succeeds.
     this.prune()
@@ -291,6 +320,11 @@ export class Conversations {
     }
     const session = {
       messages,
+      ...(removed.length
+        ? { recap: compact(this.sessions.get(key)?.recap, removed) }
+        : provisionalRecap
+          ? { recap: provisionalRecap }
+          : {}),
       expiresAt:
         this.now() +
         (options.retentionSeconds !== undefined

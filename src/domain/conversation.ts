@@ -40,6 +40,7 @@ export interface ReplyOptions {
   enableSearch?: boolean
   maxToolCalls?: number
   retentionSeconds?: number
+  summary?: string
   chatModel?: string
   contextHistory?: Message[]
   references?: string
@@ -53,7 +54,11 @@ export interface LanguageModel {
     messages: readonly Message[],
     options?: ReplyOptions
   ): Promise<string | ModelReply>
-  transcribe(audio: Uint8Array, signal?: AbortSignal): Promise<string>
+  transcribe(
+    audio: Uint8Array,
+    signal?: AbortSignal,
+    prompt?: string
+  ): Promise<string>
 }
 
 export class UserError extends Error {}

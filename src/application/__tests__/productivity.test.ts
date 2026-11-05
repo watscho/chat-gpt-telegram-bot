@@ -183,3 +183,26 @@ void test('excluding a file removes its historical copies while retaining indepe
   assert.deepEqual(selected.documents, [])
   assert.deepEqual(selected.images, [])
 })
+
+void test('recap and cost preview metadata can be independently inspected and excluded', () => {
+  const data = new Productivity()
+  data.setEstimate('a', 10)
+  const draft = data.stage('a', '1', undefined, {
+    ...request(),
+    summary: 'Earlier decisions'
+  })
+  data.setEstimate('a', 600000)
+  assert.equal(data.get('a').draft!.estimate, 600000)
+  assert.equal(
+    data.consume('a', '1', draft.token, undefined).summary,
+    'Earlier decisions'
+  )
+  const next = data.stage('a', '1', undefined, {
+    ...request(),
+    summary: 'Earlier decisions'
+  })
+  const part = next.parts.find(item => item.kind === 'summary')!
+  data.toggle('a', '1', next.token, undefined, part.id)
+  assert.equal(data.consume('a', '1', next.token, undefined).summary, '')
+  data.refresh('a')
+})

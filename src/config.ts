@@ -1,4 +1,5 @@
 export interface Config {
+  confirmExpensiveRequests: boolean
   streamResponses: boolean
   dailyBudgetMicroUsd: number
   dailyRequests: number
@@ -93,6 +94,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     )
   }
   return {
+    confirmExpensiveRequests:
+      choice('CONFIRM_EXPENSIVE_REQUESTS', ['true', 'false'], 'true') ===
+      'true',
     streamResponses:
       choice('STREAM_RESPONSES', ['true', 'false'], 'true') === 'true',
     dailyBudgetMicroUsd: integer(

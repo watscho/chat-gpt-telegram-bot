@@ -388,3 +388,35 @@ void test('reviewed context still obeys per-request turn, character and encoded-
     assert.equal(model.calls[0]!.length, 1)
   }
 })
+
+void test('trimmed turns yield a local inspectable recap that commits only with the completed replacement', async () => {
+  const settings = { ...config(), maxHistoryTurns: 1 },
+    store = new MemoryStateStore(),
+    model = new FakeModel(),
+    chat = new Conversations(model, settings, () => 0, store)
+  await chat.reply(
+    'a:1',
+    'We agreed to use plan A. Must remain private. What is pending?'
+  )
+  await chat.reply('a:1', 'Next question')
+  assert.match(chat.recap('a:1'), /plan A/)
+  assert.match(model.options.at(-1)!.summary!, /plan A/)
+  chat.fork('a:1', 'a:2', 0)
+  assert.match(chat.recap('a:2'), /plan A/)
+  await chat.respond('a:1', 'Explicitly exclude recap', [], { summary: '' })
+  assert.equal(model.options.at(-1)!.summary, '')
+  const previous = chat.recap('a:1')
+  model.failure = true
+  await assert.rejects(chat.reply('a:1', 'Fail'))
+  assert.equal(chat.recap('a:1'), previous)
+  chat.clearRecap('missing')
+  chat.clearRecap('a:1')
+  assert.equal(chat.recap('a:1'), '')
+  chat.refresh()
+  assert.equal(chat.recap('a:1'), '')
+  new Conversations(new FakeModel(), config()).refresh()
+  const local = new Conversations(new FakeModel(), settings)
+  await local.reply('a', 'First')
+  await local.reply('a', 'Second')
+  local.clearRecap('a')
+})

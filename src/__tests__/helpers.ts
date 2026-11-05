@@ -12,7 +12,8 @@ export const config = () =>
     OPENAI_API_KEY: 'test-key',
     OPENAI_CHAT_MODEL: 'test-model',
     ALLOWED_TELEGRAM_USER_IDS: '42,43',
-    STREAM_RESPONSES: 'false'
+    STREAM_RESPONSES: 'false',
+    CONFIRM_EXPENSIVE_REQUESTS: 'false'
   })
 export class FakeModel implements LanguageModel {
   calls: Message[][] = []
@@ -29,7 +30,14 @@ export class FakeModel implements LanguageModel {
       ? Promise.reject(new Error('secret-token'))
       : Promise.resolve(this.answer)
   }
-  transcribe(): Promise<string> {
+  transcribe(
+    _audio: Uint8Array,
+    _signal?: AbortSignal,
+    _prompt?: string
+  ): Promise<string> {
+    void _audio
+    void _signal
+    void _prompt
     return Promise.resolve('Voice text')
   }
 }
@@ -77,6 +85,16 @@ export class MemoryStateStore implements StateStore {
       if (id.startsWith(`${key}:`)) this.data.delete(id)
     for (const [scope, map] of this.extra)
       if (scope !== 'usage') map.delete(key)
+  }
+  commitImport(
+    owner: string,
+    profile: Profile,
+    sessions: [string, Session][],
+    records: [string, unknown][]
+  ): void {
+    this.putProfile(owner, profile)
+    for (const [key, value] of sessions) this.putSession(key, value)
+    for (const [scope, value] of records) this.putRecord(scope, owner, value)
   }
   close(): void {}
 }

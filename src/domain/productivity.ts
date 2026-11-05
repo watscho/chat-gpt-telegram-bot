@@ -1,6 +1,7 @@
 import type { Document, Image, Message } from './conversation.js'
 
 export interface PreparedRequest {
+  summary?: string
   prompt: string
   images: Image[]
   documents: Document[]
@@ -14,7 +15,13 @@ export interface ContextPart {
   id: string
   label: string
   kind:
-    'history' | 'image' | 'document' | 'memory' | 'instructions' | 'references'
+    | 'summary'
+    | 'history'
+    | 'image'
+    | 'document'
+    | 'memory'
+    | 'instructions'
+    | 'references'
   value: string | Image | Document | Message[]
   enabled: boolean
 }
@@ -23,7 +30,9 @@ export interface ContextDraft {
   thread: string
   revision: string | undefined
   expiresAt: number
+  summary?: string
   prompt: string
+  estimate?: number
   analysisOnly: boolean
   parts: ContextPart[]
 }

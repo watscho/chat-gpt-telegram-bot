@@ -9,9 +9,10 @@ export interface JobInput {
   memories: string[]
 }
 export interface Job {
+  batch?: { group: string; action: string; file: string }
   id: string
   thread: string
-  kind: 'research' | 'compare' | 'summary' | 'reminder'
+  kind: 'research' | 'compare' | 'summary' | 'reminder' | 'batch'
   state:
     'queued' | 'running' | 'succeeded' | 'failed' | 'uncertain' | 'cancelled'
   createdAt: number
