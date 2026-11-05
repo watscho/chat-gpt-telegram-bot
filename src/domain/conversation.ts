@@ -14,6 +14,7 @@ export interface Source {
 }
 
 export interface Message {
+  id?: string
   role: 'user' | 'assistant'
   content: string
   images?: Image[]
@@ -24,10 +25,21 @@ export interface ModelReply {
   text: string
   images: Image[]
   sources?: Source[]
+  toolsUsed?: { images: number; searches: number }
 }
 
 export interface ReplyOptions {
   action?: 'auto' | 'generate' | 'edit'
+  signal?: AbortSignal
+  onStart?: () => void
+  onText?: (text: string) => Promise<void>
+  instructions?: string
+  imageQuality?: 'low' | 'medium' | 'high' | 'auto'
+  imageSize?: 'auto' | '1024x1024' | '1536x1024' | '1024x1536'
+  enableImages?: boolean
+  enableSearch?: boolean
+  maxToolCalls?: number
+  retentionSeconds?: number
   search?: boolean
   memories?: string[]
   documents?: Document[]
@@ -38,7 +50,7 @@ export interface LanguageModel {
     messages: readonly Message[],
     options?: ReplyOptions
   ): Promise<string | ModelReply>
-  transcribe(audio: Uint8Array): Promise<string>
+  transcribe(audio: Uint8Array, signal?: AbortSignal): Promise<string>
 }
 
 export class UserError extends Error {}

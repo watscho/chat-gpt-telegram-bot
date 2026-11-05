@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from 'node:crypto'
 import type { Config } from '../config.js'
 import type {
   Image,
@@ -66,6 +67,65 @@ export class Conversations {
       ?.messages.findLast(message => message.role === 'assistant')?.content
   }
 
+  history(key: string): Message[] {
+    this.prune()
+    return structuredClone(this.sessions.get(key)?.messages ?? [])
+  }
+  owned(owner: string): [string, Session][] {
+    this.prune()
+    return structuredClone(
+      [...this.sessions].filter(([key]) => key.startsWith(`${owner}:`))
+    )
+  }
+  search(
+    owner: string,
+    query: string
+  ): { conversation: string; snippet: string }[] {
+    if (!query.trim() || query.length > 120)
+      throw new UserError('Search needs between 1 and 120 characters.')
+    const needle = query.toLowerCase()
+    return this.owned(owner)
+      .flatMap(([key, session]) =>
+        session.messages
+          .filter(message => message.content.toLowerCase().includes(needle))
+          .map(message => {
+            const position = message.content.toLowerCase().indexOf(needle)
+            return {
+              conversation: key.slice(owner.length + 1),
+              snippet: message.content.slice(
+                Math.max(0, position - 50),
+                position + 160
+              )
+            }
+          })
+      )
+      .slice(0, 20)
+  }
+  versions(key: string): { id: string; image: Image }[] {
+    return this.history(key).flatMap(message =>
+      message.role === 'assistant'
+        ? (message.images ?? []).map((image, part) => ({
+            id: `${message.id ?? `legacy-${createHash('sha256').update(image.data).digest('hex').slice(0, 16)}`}.${part}`,
+            image
+          }))
+        : []
+    )
+  }
+  forgetOwner(owner: string): void {
+    for (const [key] of this.owned(owner)) this.reset(key)
+  }
+
+  retention(key: string, seconds: number): void {
+    const session = this.sessions.get(key)
+    if (!session) return
+    const updated = {
+      ...session,
+      expiresAt: Math.min(session.expiresAt, this.now() + seconds * 1000)
+    }
+    this.store?.putSession(key, updated)
+    this.sessions.set(key, updated)
+  }
+
   async reply(key: string, input: string): Promise<string> {
     return (await this.respond(key, input)).text
   }
@@ -76,6 +136,7 @@ export class Conversations {
     images: Image[] = [],
     options: ReplyOptions = {}
   ): Promise<ModelReply> {
+    if (options.signal?.aborted) throw new UserError('Request stopped.')
     const documents = options.documents ?? []
     const text = input.trim()
     if (!text || text.length > this.limits.maxInputCharacters) {
@@ -109,6 +170,7 @@ export class Conversations {
     const messages = [
       ...(this.sessions.get(key)?.messages ?? []),
       {
+        id: randomUUID(),
         role: 'user' as const,
         content: text,
         ...(images.length ? { images } : {}),
@@ -135,7 +197,9 @@ export class Conversations {
         'Send a photo first, or reply to a photo with /edit and your instructions.'
       )
     }
+    options.onStart?.()
     const result = await this.model.reply(messages, options)
+    if (options.signal?.aborted) throw new UserError('Request stopped.')
     const response: ModelReply =
       typeof result === 'string'
         ? { text: result.trim(), images: [] }
@@ -143,6 +207,7 @@ export class Conversations {
     if (!response.text && !response.images.length)
       throw new Error('Empty model response')
     messages.push({
+      id: randomUUID(),
       role: 'assistant',
       content: [response.text, formatSources(response.sources)]
         .filter(Boolean)
@@ -181,7 +246,11 @@ export class Conversations {
     }
     const session = {
       messages,
-      expiresAt: this.now() + this.limits.sessionTtlMs
+      expiresAt:
+        this.now() +
+        (options.retentionSeconds !== undefined
+          ? options.retentionSeconds * 1000
+          : this.limits.sessionTtlMs)
     }
     // Persist replacement and evictions atomically before publishing in-memory changes.
     this.store?.putSession(key, session, evicted)

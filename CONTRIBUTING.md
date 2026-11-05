@@ -1,17 +1,20 @@
 # Contributing
 
-Use the Node version in `.nvmrc`, install with `npm ci`, and copy `.env.example` for a local bot only if needed. Automated tests need no credentials or live services. Install FFmpeg with libopus for native encoder checks; CI installs it explicitly.
+Use Node from `.nvmrc` and npm from `package.json`; install with `npm ci --ignore-scripts`. Automated checks need no credentials, live services or FFmpeg. Copy `.env.example` only when intentionally running a local bot. Repository source, comments, documentation, examples and commit messages use English.
 
-Keep domain/application logic independent of Telegram and OpenAI SDKs. Add behavior tests for changes involving state, error handling, limits, or provider contracts. Use injected transports to keep tests offline. Put tests beside their implementation in `__tests__`; shared support belongs in `src/__tests__`. Require 100% lines, branches and functions across executable `src`; exclude tests/fixtures only. Do not lower thresholds or add coverage-ignore comments. See `docs/architecture.md`.
+Keep domain/application logic independent of Telegram/OpenAI SDK types. Add adjacent behavior-focused unit tests in `__tests__` for state, failures, ownership, cancellation, limits and provider contracts. Shared controlled doubles belong in `src/__tests__/helpers.ts`. Only unit tests are permitted: mock network, filesystem/database constructors, clocks, process lifecycle, PDF rendering and FFmpeg spawning. Never add live API, application subprocess, native database/encoder, browser, Docker, integration, performance or soak tests.
+
+Require 100% executable source lines, branches and functions. Exclude tests only; do not lower thresholds or add coverage-ignore annotations. See [architecture and conventions](docs/architecture.md).
 
 Before opening a pull request:
 
 ```sh
 npm run check
 npm run test:coverage
-npm audit
 ```
 
-Describe the changed behavior, migration impact, and validation performed. Commit the updated npm lockfile with dependency changes. Do not include tokens, `.env`, private messages, or raw provider errors in code, fixtures, logs, or issues.
+These run static checks, unit tests and TypeScript compilation. `npm audit` is a separate network-backed dependency advisory query, not a unit test. CI includes it; do not substitute advisory results for runtime qualification.
 
-Contributions are provided under the existing MIT license. See `SECURITY.md` for private vulnerability reporting.
+Describe changed behavior, migration impact and the checks actually performed. Update user/configuration/operations documentation and `CHANGELOG.md`; keep package and lockfile versions aligned. Commit lockfile changes with dependencies. Never include credentials, private messages, real user files or raw provider errors in fixtures, logs or issues. Do not claim live/native/deployment acceptance from unit coverage.
+
+Contributions use the existing MIT license. See [security policy](SECURITY.md) for private reporting.

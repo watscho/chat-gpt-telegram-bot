@@ -56,7 +56,8 @@ export async function downloadTelegramDocument(
   filename: string,
   maxBytes: number,
   timeoutMs: number,
-  fetcher: typeof fetch = fetch
+  fetcher: typeof fetch = fetch,
+  signal?: AbortSignal
 ): Promise<Document> {
   // Reject unsupported names before downloading content.
   if (!formats[extname(filename).toLowerCase()])
@@ -64,7 +65,14 @@ export async function downloadTelegramDocument(
       'Supported documents: PDF, DOCX, XLSX, PPTX, TXT, MD, CSV and JSON.'
     )
   return documentFromBytes(
-    await downloadTelegramFile(url, maxBytes, timeoutMs, fetcher, 'Document'),
+    await downloadTelegramFile(
+      url,
+      maxBytes,
+      timeoutMs,
+      fetcher,
+      'Document',
+      signal
+    ),
     filename,
     maxBytes
   )

@@ -108,3 +108,22 @@ void test('HTTP error cleanup tolerates a failed body cancellation', async () =>
     /download failed/
   )
 })
+
+void test('caller cancellation is combined with the download timeout', async () => {
+  const controller = new AbortController()
+  controller.abort()
+  await assert.rejects(
+    downloadTelegramAudio(
+      url,
+      10,
+      1000,
+      (_url, options) => {
+        assert.equal(options?.signal?.aborted, true)
+        return Promise.reject(new Error('aborted'))
+      },
+      'File',
+      controller.signal
+    ),
+    /aborted/
+  )
+})

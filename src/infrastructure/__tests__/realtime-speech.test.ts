@@ -185,3 +185,21 @@ void test('actual native Realtime SDK transport sends the configured model and a
   )
   assert.equal(Buffer.from(await speech.synthesize('hello')).toString(), 'OggS')
 })
+
+void test('Realtime speech closes on caller cancellation and rejects already-cancelled requests', async () => {
+  const controller = new AbortController()
+  const cancelled = setup(() => {
+    controller.abort()
+  })
+  await assert.rejects(
+    cancelled.speech.synthesize('hello', controller.signal),
+    /stopped/
+  )
+  assert.equal(cancelled.closed(), 1)
+  const already = setup(() => {})
+  await assert.rejects(
+    already.speech.synthesize('hello', controller.signal),
+    /stopped/
+  )
+  assert.equal(already.requests.length, 0)
+})

@@ -59,7 +59,8 @@ void test('actual SDK sends stateless Responses request with bounded output', as
   })
   assert.deepEqual(await model.reply([{ role: 'user', content: 'hi' }]), {
     text: 'hello',
-    images: []
+    images: [],
+    toolsUsed: { images: 0, searches: 0 }
   })
 })
 void test('incomplete and empty responses are rejected', async () => {
@@ -144,7 +145,7 @@ void test('SDK sends inline references and forced edit; image-only results are a
       ],
       { action: 'edit' }
     ),
-    { text: '', images: [image] }
+    { text: '', images: [image], toolsUsed: { images: 1, searches: 0 } }
   )
 })
 
@@ -229,6 +230,7 @@ void test('SDK forces web search and preserves numbered citation metadata', asyn
     {
       text: 'New release. [1]',
       images: [],
+      toolsUsed: { images: 0, searches: 0 },
       sources: [
         { title: 'Official release', url: 'https://example.com/release' }
       ]
@@ -326,6 +328,89 @@ void test('document-only inputs and non-text output annotations are handled with
         documents: [{ name: 'test.txt', mime: 'text/plain', data: 'aGk=' }]
       }
     ]),
-    { text: 'Summary', images: [] }
+    { text: 'Summary', images: [], toolsUsed: { images: 0, searches: 0 } }
+  )
+})
+
+function eventStream(events: unknown[]): Response {
+  return new Response(
+    events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''),
+    { headers: { 'content-type': 'text/event-stream' } }
+  )
+}
+void test('Responses streaming forwards incremental text and requires a completed terminal response', async () => {
+  const deltas: string[] = []
+  const response = {
+    status: 'completed',
+    output: [
+      {
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: 'Hello world', annotations: [] }]
+      },
+      { type: 'web_search_call', status: 'completed', id: 'ws_1' }
+    ]
+  }
+  const model = modelWith((_url, init) => {
+    const body = JSON.parse(init?.body as string) as {
+      input: unknown[]
+      stream: boolean
+      tools: unknown[]
+      max_tool_calls: number
+    }
+    assert.equal(body.stream, true)
+    assert.equal(body.tools.length, 0)
+    assert.equal(body.max_tool_calls, 1)
+    assert.deepEqual(body.input[0], {
+      role: 'user',
+      content: 'Conversation preferences (user-provided): Be concise.'
+    })
+    return Promise.resolve(
+      eventStream([
+        { type: 'response.created' },
+        { type: 'response.output_text.delta', delta: 'Hello ' },
+        { type: 'response.output_text.delta', delta: 'world' },
+        { type: 'response.completed', response }
+      ])
+    )
+  })
+  const result = await model.reply([{ role: 'user', content: 'hi' }], {
+    signal: new AbortController().signal,
+    instructions: 'Be concise.',
+    enableImages: false,
+    enableSearch: false,
+    maxToolCalls: 1,
+    imageQuality: 'medium',
+    imageSize: '1024x1024',
+    onText: delta => {
+      deltas.push(delta)
+      return Promise.resolve()
+    }
+  })
+  assert.deepEqual(deltas, ['Hello ', 'world'])
+  assert.deepEqual(result.toolsUsed, { images: 0, searches: 1 })
+  for (const type of ['error', 'response.failed', 'response.incomplete']) {
+    await assert.rejects(
+      modelWith(() => Promise.resolve(eventStream([{ type }]))).reply([], {
+        onText: () => Promise.resolve()
+      }),
+      /Incomplete/
+    )
+  }
+  await assert.rejects(
+    modelWith(() => Promise.resolve(eventStream([]))).reply([], {
+      onText: () => Promise.resolve()
+    }),
+    /Missing completed/
+  )
+})
+void test('incoming transcription accepts a caller cancellation signal', async () => {
+  const model = modelWith((_url, init) => {
+    assert.ok(init?.signal)
+    return Promise.resolve(Response.json({ text: 'hello' }))
+  })
+  assert.equal(
+    await model.transcribe(new Uint8Array([1]), new AbortController().signal),
+    'hello'
   )
 })

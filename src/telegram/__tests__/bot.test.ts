@@ -6,8 +6,8 @@ import type { Update, Voice, Message } from 'telegraf/types'
 import { createBot, splitReply, type BotDependencies } from '../bot.js'
 import type { Speech } from '../../domain/speech.js'
 import type { StateStore } from '../../domain/state.js'
-import { SQLiteStateStore } from '../../infrastructure/state-store.js'
-import { config, FakeModel } from '../../__tests__/helpers.js'
+import { Jobs } from '../../application/jobs.js'
+import { config, FakeModel, MemoryStateStore } from '../../__tests__/helpers.js'
 
 function setup(
   model = new FakeModel(),
@@ -20,8 +20,19 @@ function setup(
   const documents: unknown[] = []
   const voices: unknown[] = []
   const downloads: URL[] = []
+  const edits: string[] = []
+  const callbacks: string[] = []
+  const keyboards: {
+    inline_keyboard: { text: string; callback_data: string }[][]
+  }[] = []
   let errors = 0
-  const transport = { failMessages: false, failActions: false, actions: 0 }
+  const transport = {
+    failMessages: false,
+    failActions: false,
+    failEdits: 0,
+    actions: 0,
+    onCallback: undefined as (() => void) | undefined
+  }
   const bot = createBot({
     config: { ...config(), maxConcurrentRequests },
     model,
@@ -56,8 +67,27 @@ function setup(
     'callApi',
     (
       method: string,
-      payload: { text?: string; document?: unknown; voice?: unknown }
+      payload: {
+        text?: string
+        document?: unknown
+        voice?: unknown
+        reply_markup?: {
+          inline_keyboard: { text: string; callback_data: string }[][]
+        }
+      }
     ) => {
+      if (payload.reply_markup) keyboards.push(payload.reply_markup)
+      if (method === 'answerCallbackQuery') {
+        callbacks.push(payload.text ?? '')
+        transport.onCallback?.()
+      }
+      if (method === 'editMessageText') {
+        edits.push(payload.text ?? '')
+        if (transport.failEdits > 0) {
+          transport.failEdits--
+          return Promise.reject(new Error('edit failed'))
+        }
+      }
       if (method === 'sendChatAction') {
         transport.actions++
         if (transport.failActions)
@@ -67,6 +97,12 @@ function setup(
         if (transport.failMessages)
           return Promise.reject(new Error('telegram-secret'))
         replies.push(payload.text ?? '')
+        return Promise.resolve({
+          message_id: ++sequence,
+          date: 1,
+          chat: { id: 42, type: 'private' },
+          text: payload.text
+        })
       }
       if (method === 'sendVoice') voices.push(payload.voice)
       if (method === 'sendDocument') documents.push(payload.document)
@@ -82,6 +118,9 @@ function setup(
     documents,
     voices,
     downloads,
+    edits,
+    callbacks,
+    keyboards,
     transport,
     errors: () => errors
   }
@@ -349,7 +388,8 @@ void test('replying to an image document selects it; unsupported files are rejec
   assert.ok(replies.at(-1)?.includes('Unable to process'))
 })
 
-void test('photo albums become one multimodal request and share the concurrency lock', async () => {
+void test('photo albums become one multimodal request and share the concurrency lock', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
   const { bot, model, replies } = setup()
   const make = (caption: string): Update => {
     const item = photoUpdate(caption)
@@ -360,6 +400,7 @@ void test('photo albums become one multimodal request and share the concurrency 
   await new Promise(done => setImmediate(done))
   await bot.handleUpdate(make(''))
   await bot.handleUpdate(update('/reset'))
+  t.mock.timers.tick(750)
   await first
   assert.equal(model.calls.length, 1)
   assert.equal(model.calls[0]?.[0]?.images?.length, 2)
@@ -368,7 +409,7 @@ void test('photo albums become one multimodal request and share the concurrency 
 })
 
 void test('named conversations keep independent histories and saved memory is user-scoped', async () => {
-  const store = new SQLiteStateStore(':memory:')
+  const store = new MemoryStateStore()
   const { bot, model, replies } = setup(new FakeModel(), 10, undefined, store)
   await bot.handleUpdate(update('first conversation'))
   await bot.handleUpdate(update('/new Work'))
@@ -633,7 +674,8 @@ void test('attachment memory and download deadlines reject requests before invok
   assert.ok(app.replies.at(-1)?.includes('timed out'))
 })
 
-void test('mixed unsupported album entries fail as one batch rather than dropping attachments', async () => {
+void test('mixed unsupported album entries fail as one batch rather than dropping attachments', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
   const app = setup()
   const first = photoUpdate('compare')
   if (!('message' in first) || !first.message) throw new Error('fixture')
@@ -660,6 +702,7 @@ void test('mixed unsupported album entries fail as one batch rather than droppin
       media_group_id: 'mixed'
     }
   })
+  t.mock.timers.tick(750)
   await pending
   assert.equal(app.model.calls.length, 0)
   assert.ok(app.replies.at(-1)?.includes('supported images or documents'))
@@ -691,4 +734,568 @@ void test('file metadata lookup shares the download deadline and rejects unavail
   await app.bot.handleUpdate(voiceUpdate())
   assert.equal(app.model.calls.length, 0)
   assert.equal(app.errors(), 0)
+})
+
+function callback(data: string, user = 42): Update {
+  return {
+    update_id: ++sequence,
+    callback_query: {
+      id: `callback-${sequence}`,
+      from: { id: user, is_bot: false, first_name: 'User' },
+      chat_instance: 'unit',
+      data,
+      message: {
+        message_id: 1,
+        date: 1,
+        from: { id: 1, is_bot: true, first_name: 'Bot' },
+        chat: { id: user, type: 'private', first_name: 'User' },
+        text: 'Answer'
+      }
+    }
+  }
+}
+function button(app: ReturnType<typeof setup>, prefix: string): string {
+  const data = app.keyboards
+    .findLast(keyboard =>
+      keyboard.inline_keyboard
+        .flat()
+        .some(item => item.callback_data.startsWith(prefix))
+    )
+    ?.inline_keyboard.flat()
+    .find(item => item.callback_data.startsWith(prefix))?.callback_data
+  assert.ok(data, `Missing button ${prefix}`)
+  return data
+}
+function documentUpdate(name: string, caption = ''): Update {
+  return {
+    update_id: ++sequence,
+    message: {
+      message_id: sequence,
+      date: 1,
+      from: { id: 42, is_bot: false, first_name: 'User' },
+      chat: { id: 42, type: 'private', first_name: 'User' },
+      caption,
+      document: {
+        file_id: name,
+        file_unique_id: name,
+        file_name: name,
+        mime_type: 'application/pdf',
+        file_size: 5
+      }
+    }
+  }
+}
+void test('Stop rejects foreign/stale controls and prevents cancelled partial output from entering history', async () => {
+  const model = new FakeModel()
+  model.reply = (messages, options) => {
+    model.calls.push(structuredClone([...messages]))
+    return new Promise((_resolve, reject) =>
+      options!.signal!.addEventListener(
+        'abort',
+        () => reject(new Error('provider-secret')),
+        { once: true }
+      )
+    )
+  }
+  const app = setup(model, 10, undefined, undefined, {
+    config: { ...config(), streamResponses: true }
+  })
+  const pending = app.bot.handleUpdate(update('slow request'))
+  await new Promise(resolve => setImmediate(resolve))
+  const stop = button(app, 'request:stop:')
+  await app.bot.handleUpdate(callback(stop, 43))
+  assert.equal(app.callbacks.at(-1), 'No matching active request.')
+  await app.bot.handleUpdate(callback('request:stop:stale'))
+  assert.equal(app.callbacks.at(-1), 'No matching active request.')
+  await app.bot.handleUpdate(callback(stop))
+  await pending
+  assert.equal(app.errors(), 0)
+  assert.ok(app.edits.includes('Stopped.'))
+  assert.ok(app.replies.at(-1)?.includes('Request stopped'))
+  await app.bot.handleUpdate(update('/stop'))
+  assert.equal(app.replies.at(-1), 'No active request.')
+  model.reply = FakeModel.prototype.reply.bind(model)
+  await app.bot.handleUpdate(update('retry after cancellation'))
+  assert.equal(model.calls.at(-1)?.length, 1)
+  await app.bot.handleUpdate(update('/usage'))
+  assert.ok(app.replies.at(-1)?.includes('Failed/uncertain attempts: 1'))
+})
+void test('streamed previews throttle updates, deliver long output and fall back when edits fail', async t => {
+  let now = 2000
+  t.mock.method(Date, 'now', () => now)
+  const model = new FakeModel()
+  model.reply = async (_messages, options) => {
+    await options!.onText!('Hello ')
+    now += 100
+    await options!.onText!('world')
+    now += 1100
+    await options!.onText!('!')
+    return {
+      text: 'Hello world!',
+      images: [],
+      toolsUsed: { images: 0, searches: 0 }
+    }
+  }
+  const app = setup(model, 10, undefined, undefined, {
+    config: { ...config(), streamResponses: true }
+  })
+  await app.bot.handleUpdate(update('stream'))
+  assert.deepEqual(app.edits, ['Hello ', 'Hello world!', 'Hello world!'])
+  app.transport.failEdits = 100
+  await app.bot.handleUpdate(update('edit fallback'))
+  assert.ok(app.replies.includes('Hello world!'))
+  app.transport.failEdits = 0
+  model.reply = FakeModel.prototype.reply.bind(model)
+  model.answer = 'x'.repeat(8001)
+  const before = app.replies.length
+  await app.bot.handleUpdate(update('long answer'))
+  assert.equal(app.edits.at(-1)?.length, 4000)
+  assert.equal(app.replies.slice(before + 1).join('').length, 4001)
+  model.reply = async (_messages, options) => {
+    now += 1100
+    await options!.onText!('')
+    return { text: '', images: [{ data: 'iVBORw0KGgo=', mime: 'image/png' }] }
+  }
+  await app.bot.handleUpdate(update('/image cat'))
+  assert.equal(app.edits.at(-1), 'Image ready.')
+  assert.ok(app.edits.includes('Working…'))
+})
+void test('owned response buttons retry, rewrite, speak and configure images without accepting forged actions', async () => {
+  const spoken: string[] = []
+  const app = setup(new FakeModel(), 10, {
+    synthesize: text => {
+      spoken.push(text)
+      return Promise.resolve(Buffer.from('OggS'))
+    }
+  })
+  await app.bot.handleUpdate(update('first question'))
+  const retry = button(app, 'response:retry:')
+  const token = retry.slice('response:retry:'.length)
+  await app.bot.handleUpdate(callback(retry, 43))
+  assert.match(app.replies.at(-1)!, /stale/)
+  await app.bot.handleUpdate(callback('unknown:action'))
+  assert.equal(app.callbacks.at(-1), 'Unknown control.')
+  const game = callback('placeholder')
+  if (
+    !('callback_query' in game) ||
+    !game.callback_query ||
+    !('data' in game.callback_query)
+  )
+    throw new Error('fixture')
+  const { data: _data, ...base } = game.callback_query
+  void _data
+  await app.bot.handleUpdate({
+    update_id: ++sequence,
+    callback_query: { ...base, game_short_name: 'unit' }
+  })
+  assert.equal(app.callbacks.at(-1), 'Unsupported control.')
+  await app.bot.handleUpdate(callback(`setting:quality:medium:${token}`))
+  await app.bot.handleUpdate(callback(`setting:size:1536x1024:${token}`))
+  await app.bot.handleUpdate(callback(`setting:color:red:${token}`))
+  assert.match(app.replies.at(-1)!, /Unknown image setting/)
+  await app.bot.handleUpdate(callback(`response:unknown:${token}`))
+  assert.match(app.replies.at(-1)!, /Unknown response action/)
+  await app.bot.handleUpdate(callback(`response:shorter:${token}`))
+  assert.match(app.model.calls.at(-1)?.at(-1)?.content ?? '', /concisely/)
+  assert.equal(app.model.options.at(-1)?.imageQuality, 'medium')
+  assert.equal(app.model.options.at(-1)?.imageSize, '1536x1024')
+  await app.bot.handleUpdate(callback(button(app, 'response:more:')))
+  assert.match(app.model.calls.at(-1)?.at(-1)?.content ?? '', /Expand/)
+  await app.bot.handleUpdate(callback(button(app, 'response:speak:')))
+  assert.equal(spoken.at(-1), 'Test answer')
+  await app.bot.handleUpdate(callback(button(app, 'response:retry:')))
+  assert.match(app.model.calls.at(-1)?.at(-1)?.content ?? '', /Expand/)
+  await app.bot.handleUpdate(callback(retry))
+  assert.match(app.replies.at(-1)!, /stale/)
+})
+void test('image controls select retained versions and reject expired image or answer references', async t => {
+  let now = 0
+  t.mock.method(Date, 'now', () => now)
+  const app = setup()
+  app.model.answer = {
+    text: '',
+    images: [{ data: 'iVBORw0KGgo=', mime: 'image/png' }]
+  }
+  await app.bot.handleUpdate(update('/image original'))
+  assert.ok(button(app, 'setting:size:1024x1024:'))
+  app.model.answer = {
+    text: '',
+    images: [{ data: 'iVBORw0KGgoA', mime: 'image/png' }]
+  }
+  await app.bot.handleUpdate(update('/edit background'))
+  const previous = button(app, 'response:previous:')
+  await app.bot.handleUpdate(callback(previous))
+  assert.match(app.replies.at(-1)!, /Selected source/)
+  await app.bot.handleUpdate(update('/edit selected source'))
+  assert.equal(
+    app.model.calls.at(-1)?.at(-1)?.images?.[0]?.data,
+    'iVBORw0KGgo='
+  )
+  await app.bot.handleUpdate(callback(button(app, 'response:variation:')))
+  assert.match(app.model.calls.at(-1)?.at(-1)?.content ?? '', /variation/)
+  const last = button(app, 'response:previous:')
+  await app.bot.handleUpdate(update('/versions'))
+  const id = app.replies.at(-1)!.split('\n')[0]!.slice(3)
+  await app.bot.handleUpdate(update(`/revert ${id}`))
+  now = 3600001
+  await app.bot.handleUpdate(update('/edit expired source'))
+  assert.match(app.replies.at(-1)!, /source has expired/)
+  await app.bot.handleUpdate(callback(last))
+  assert.match(app.replies.at(-1)!, /stale/)
+  await app.bot.handleUpdate(callback(last.replace(':previous:', ':retry:')))
+  assert.match(app.replies.at(-1)!, /stale/)
+  await app.bot.handleUpdate(callback(last.replace(':previous:', ':speak:')))
+  assert.match(app.replies.at(-1)!, /stale/)
+  await app.bot.handleUpdate(update('/new Other'))
+  await app.bot.handleUpdate(callback(last))
+  assert.match(app.replies.at(-1)!, /stale/)
+})
+void test('background jobs use frozen project references and deliver retained results without a second provider call', async () => {
+  const store = new MemoryStateStore()
+  const app = setup(new FakeModel(), 10, undefined, store)
+  await app.bot.handleUpdate(documentUpdate('v1.pdf', 'Read first'))
+  await app.bot.handleUpdate(documentUpdate('v2.pdf', 'Read second'))
+  await app.bot.handleUpdate(update('/project new Work'))
+  await app.bot.handleUpdate(
+    update('/project instructions Use source evidence')
+  )
+  await app.bot.handleUpdate(update('/project remember Project note'))
+  await app.bot.handleUpdate(update('/remember Global note'))
+  await app.bot.handleUpdate(update('/mode developer'))
+  await app.bot.handleUpdate(update('/retention 120'))
+  await app.bot.handleUpdate(update('/job compare Describe changes'))
+  await app.bot.handleUpdate(update('/job research Find recent sources'))
+  await app.bot.handleUpdate(update('/job summary Decisions'))
+  await app.bot.tickJobs()
+  assert.match(app.model.calls.at(-1)?.at(-1)?.content ?? '', /Compare.*table/)
+  assert.equal(app.model.options.at(-1)?.enableImages, false)
+  assert.deepEqual(app.model.options.at(-1)?.memories, [
+    'Global note',
+    'Project note'
+  ])
+  assert.match(
+    app.model.options.at(-1)?.instructions ?? '',
+    /Use source evidence/
+  )
+  app.model.answer = {
+    text: 'Research',
+    images: [{ data: 'iVBORw0KGgo=', mime: 'image/png' }],
+    sources: [{ title: 'Source', url: 'https://example.com' }],
+    toolsUsed: { images: 0, searches: 1 }
+  }
+  await app.bot.tickJobs()
+  assert.equal(app.model.options.at(-1)?.search, true)
+  assert.ok(app.replies.some(text => text.includes('Sources:')))
+  assert.equal(app.documents.length, 1)
+  app.model.answer = 'Summary'
+  await app.bot.tickJobs()
+  assert.match(app.model.calls.at(-1)?.at(-1)?.content ?? '', /Summarize/)
+  const count = app.model.calls.length
+  await app.bot.tickJobs()
+  assert.equal(app.model.calls.length, count)
+  const queue = store.getRecord<{ jobs: { id: string }[] }>('queue', '42:42')!
+  await app.bot.handleUpdate(update(`/result ${queue.jobs[0]!.id}`))
+  assert.equal(app.model.calls.length, count)
+  app.bot.stopJobs()
+})
+void test('background conversation locks permit switching and prevent concurrent writes or quota reuse after failure', async () => {
+  const app = setup(new FakeModel(), 2)
+  await app.bot.handleUpdate(update('initial context'))
+  await app.bot.handleUpdate(update('/job research Slow work'))
+  let finish!: (text: string) => void
+  app.model.reply = (messages, options) => {
+    app.model.calls.push(structuredClone([...messages]))
+    app.model.options.push(options!)
+    if (messages.at(-1)?.content === 'Slow work')
+      return new Promise(resolve => {
+        finish = resolve
+      })
+    return Promise.resolve('Foreground answer')
+  }
+  const pending = app.bot.tickJobs()
+  await new Promise(resolve => setImmediate(resolve))
+  await app.bot.handleUpdate(update('same conversation'))
+  assert.match(app.replies.at(-1)!, /background request/)
+  await app.bot.handleUpdate(update('/new Other'))
+  await app.bot.handleUpdate(update('different conversation'))
+  assert.equal(app.replies.at(-1), 'Foreground answer')
+  finish('Background answer')
+  await pending
+  app.model.reply = FakeModel.prototype.reply.bind(app.model)
+  app.model.failure = true
+  await app.bot.handleUpdate(update('/job research Failing work'))
+  await app.bot.tickJobs()
+  app.model.failure = false
+  await app.bot.handleUpdate(update('/jobs'))
+  assert.ok(app.replies.at(-1)?.includes('failed'))
+  assert.ok(!app.replies.join('').includes('secret'))
+  await app.bot.handleUpdate(update('/usage'))
+  assert.match(app.replies.at(-1)!, /Failed\/uncertain attempts: 1/)
+})
+
+void test('foreground comparison, project attachments, exports and per-thread retention route through owned context', async () => {
+  const app = setup()
+  await app.bot.handleUpdate(update('/project new Work'))
+  await app.bot.handleUpdate(update('/project attach'))
+  assert.match(app.replies.at(-1)!, /Reply to a document/)
+  const request = update('/project attach')
+  const original = documentUpdate('project.pdf')
+  if (
+    !('message' in request) ||
+    !request.message ||
+    !('message' in original) ||
+    !original.message
+  )
+    throw new Error('fixture')
+  await app.bot.handleUpdate({
+    ...request,
+    message: {
+      ...request.message,
+      reply_to_message: original.message as unknown as NonNullable<
+        Message.CommonMessage['reply_to_message']
+      >
+    }
+  })
+  await app.bot.handleUpdate(
+    update('/project remember Project-scoped preference')
+  )
+  await app.bot.handleUpdate(update('/retention 120'))
+  await app.bot.handleUpdate(
+    documentUpdate('project.pdf', 'Use this same reference')
+  )
+  await app.bot.handleUpdate(
+    documentUpdate('second.pdf', 'Read the second version')
+  )
+  await app.bot.handleUpdate(update('/compare obligations'))
+  assert.match(app.model.calls.at(-1)?.at(-1)?.content ?? '', /change table/)
+  assert.equal(app.model.options.at(-1)?.enableImages, false)
+  assert.equal(app.model.options.at(-1)?.enableSearch, false)
+  assert.equal(app.model.options.at(-1)?.retentionSeconds, 120)
+  assert.ok(
+    app.model.options.at(-1)?.memories?.includes('Project-scoped preference')
+  )
+  await app.bot.handleUpdate(update('/export markdown'))
+  await app.bot.handleUpdate(update('/data'))
+  assert.equal(app.documents.length, 2)
+})
+void test('scheduled summaries freeze deduplicated image/file references and reminders make no provider call', async t => {
+  let now = 0
+  t.mock.method(Date, 'now', () => now)
+  const app = setup()
+  app.model.answer = {
+    text: 'Image',
+    images: [{ data: 'iVBORw0KGgo=', mime: 'image/png' }]
+  }
+  await app.bot.handleUpdate(documentUpdate('same.pdf', 'First copy'))
+  await app.bot.handleUpdate(documentUpdate('same.pdf', 'Second copy'))
+  await app.bot.handleUpdate(update('/summary every 1m | Summarize references'))
+  await app.bot.handleUpdate(update('/remind every 1m | Check this'))
+  app.model.answer = {
+    text: 'Digest',
+    images: [],
+    sources: [{ title: 'Reference', url: 'https://example.com' }]
+  }
+  const before = app.model.calls.length
+  now = 60000
+  await app.bot.tickJobs()
+  const options = app.model.options.at(-1)!
+  assert.equal(options.documents?.length, 1)
+  assert.equal(app.model.calls.at(-1)?.at(-1)?.images?.length, 1)
+  assert.equal(app.model.calls.length, before + 1)
+  await app.bot.tickJobs()
+  assert.equal(app.model.calls.length, before + 1)
+  assert.ok(app.replies.some(reply => reply.includes('Check this')))
+})
+function seedQueue(store: MemoryStateStore, owner: string, thread = '1') {
+  const queue = new Jobs(
+    config(),
+    {
+      allowed: () => true,
+      available: () => true,
+      input: (_owner, _thread, prompt) => ({
+        prompt,
+        images: [],
+        documents: [],
+        instructions: '',
+        memories: []
+      }),
+      execute: () => Promise.resolve({ text: 'unused', images: [] }),
+      deliver: () => Promise.resolve()
+    },
+    store
+  )
+  return queue.enqueue(owner, thread, 'research', {
+    prompt: 'Queued work',
+    images: [],
+    documents: [],
+    instructions: '',
+    memories: []
+  })
+}
+void test('worker rejects unauthorized owners, missing conversations and empty summaries before paid requests', async () => {
+  const store = new MemoryStateStore()
+  for (const owner of ['malformed', '42:43', '99:99']) seedQueue(store, owner)
+  seedQueue(store, '42:42', 'missing')
+  const app = setup(new FakeModel(), 10, undefined, store)
+  await app.bot.tickJobs()
+  assert.equal(app.model.calls.length, 0)
+  await app.bot.handleUpdate(update('/jobs'))
+  assert.match(app.replies.at(-1)!, /source conversation no longer exists/)
+  await app.bot.handleUpdate(update('/job summary Empty conversation'))
+  await app.bot.tickJobs()
+  assert.equal(app.model.calls.length, 0)
+  await app.bot.handleUpdate(update('/jobs'))
+  assert.match(app.replies.at(-1)!, /No retained conversation/)
+})
+void test('worker defers when foreground capacity is exhausted and can be cancelled without committing results', async () => {
+  const app = setup(new FakeModel(), 1)
+  await app.bot.handleUpdate(update('/job research Deferred work'))
+  let finish!: (value: string) => void
+  app.model.reply = () =>
+    new Promise(resolve => {
+      finish = resolve
+    })
+  const foreground = app.bot.handleUpdate(update('slow foreground'))
+  await new Promise(resolve => setImmediate(resolve))
+  await app.bot.tickJobs()
+  await app.bot.handleUpdate(update('/stop'))
+  assert.match(app.replies.at(-1)!, /Stopping request/)
+  finish('cancelled late foreground')
+  await foreground
+  let signal!: AbortSignal
+  app.model.reply = (_messages, options) => {
+    signal = options!.signal!
+    return new Promise(resolve => {
+      finish = resolve
+    })
+  }
+  const background = app.bot.tickJobs()
+  await new Promise(resolve => setImmediate(resolve))
+  app.bot.stopJobs()
+  assert.equal(signal.aborted, true)
+  finish('cancelled late background')
+  await background
+  app.model.reply = FakeModel.prototype.reply.bind(app.model)
+  await app.bot.handleUpdate(update('fresh request'))
+  assert.equal(app.model.calls.at(-1)?.length, 1)
+})
+void test('discarded oversized answers expose useful errors and repeated previous-image selection is bounded', async () => {
+  const empty = setup(new FakeModel(), 10, undefined, undefined, {
+    config: { ...config(), maxHistoryCharacters: 1 }
+  })
+  await empty.bot.handleUpdate(update('q'))
+  await empty.bot.handleUpdate(callback(button(empty, 'response:retry:')))
+  assert.match(empty.replies.at(-1)!, /Original request/)
+  await empty.bot.handleUpdate(callback(button(empty, 'response:variation:')))
+  assert.match(empty.replies.at(-1)!, /No retained image/)
+  await empty.bot.handleUpdate(callback(button(empty, 'response:speak:')))
+  assert.match(empty.replies.at(-1)!, /not configured/)
+  const images = setup()
+  images.model.answer = {
+    text: '',
+    images: [{ data: 'iVBORw0KGgo=', mime: 'image/png' }]
+  }
+  for (let i = 0; i < 3; i++)
+    await images.bot.handleUpdate(update('/image next'))
+  const previous = button(images, 'response:previous:')
+  await images.bot.handleUpdate(callback(previous))
+  await images.bot.handleUpdate(callback(previous))
+  await images.bot.handleUpdate(callback(previous))
+  assert.match(images.replies.at(-1)!, /No retained image/)
+})
+void test('streaming provider and preview-cleanup failures keep history clean and hide private errors', async () => {
+  const app = setup(new FakeModel(), 10, undefined, undefined, {
+    config: { ...config(), streamResponses: true }
+  })
+  app.transport.failEdits = 100
+  app.model.failure = true
+  await app.bot.handleUpdate(update('failure'))
+  assert.equal(app.errors(), 1)
+  assert.ok(!app.replies.join('').includes('secret'))
+  app.model.failure = false
+  await app.bot.handleUpdate(update('retry'))
+  assert.equal(app.model.calls.at(-1)?.length, 1)
+})
+void test('late background completion invalidates an older foreground answer before retry can issue a new paid call', async () => {
+  const app = setup(new FakeModel(), 2)
+  await app.bot.handleUpdate(update('original question'))
+  const retry = button(app, 'response:retry:')
+  await app.bot.handleUpdate(update('/job research Concurrent work'))
+  let finish!: (value: string) => void
+  let calls = 0
+  app.model.reply = () => {
+    calls++
+    return new Promise(resolve => {
+      finish = resolve
+    })
+  }
+  const pending = app.bot.tickJobs()
+  await new Promise(resolve => setImmediate(resolve))
+  app.transport.onCallback = () => {
+    queueMicrotask(() => finish('Background result'))
+  }
+  await app.bot.handleUpdate(callback(retry))
+  await pending
+  assert.equal(calls, 1)
+  assert.match(
+    app.replies.findLast(reply => reply.includes('stale')) ?? '',
+    /stale/
+  )
+})
+
+void test('summary jobs retain their queued reference files even if conversation history has expired', async () => {
+  const store = new MemoryStateStore()
+  const first = seedQueue(store, '42:42')
+  const second = seedQueue(store, '43:43')
+  store.putRecord('queue', '42:42', {
+    jobs: [
+      {
+        ...first,
+        kind: 'summary',
+        input: {
+          ...first.input,
+          images: [{ data: 'iVBORw0KGgo=', mime: 'image/png' }]
+        }
+      }
+    ],
+    schedules: []
+  })
+  store.putRecord('queue', '43:43', {
+    jobs: [
+      {
+        ...second,
+        kind: 'summary',
+        input: {
+          ...second.input,
+          documents: [
+            { name: 'reference.pdf', mime: 'application/pdf', data: 'JVBERi0=' }
+          ]
+        }
+      }
+    ],
+    schedules: []
+  })
+  const app = setup(new FakeModel(), 10, undefined, store)
+  await app.bot.tickJobs()
+  assert.equal(app.model.calls.length, 2)
+  assert.equal(app.model.calls[0]?.at(-1)?.images?.length, 1)
+  assert.equal(app.model.calls[1]?.at(-1)?.documents?.length, 1)
+})
+
+void test('queued work resolves saved notes at execution rather than retaining forgotten note snapshots', async () => {
+  const store = new MemoryStateStore()
+  const app = setup(new FakeModel(), 10, undefined, store)
+  await app.bot.handleUpdate(update('/project new Work'))
+  await app.bot.handleUpdate(update('/project remember Project preference'))
+  await app.bot.handleUpdate(update('/remember Personal preference'))
+  await app.bot.handleUpdate(update('/job research Pending task'))
+  const saved = store.getRecord<{ jobs: { input: { memories: string[] } }[] }>(
+    'queue',
+    '42:42'
+  )!
+  assert.deepEqual(saved.jobs[0]?.input.memories, [])
+  await app.bot.handleUpdate(update('/forget all'))
+  await app.bot.handleUpdate(update('/project forget all'))
+  await app.bot.tickJobs()
+  assert.deepEqual(app.model.options.at(-1)?.memories, [])
 })

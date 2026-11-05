@@ -107,6 +107,10 @@ export class Profiles {
     profile.voice = mode
     this.save(key, profile)
   }
+  forgetOwner(owner: string): void {
+    this.cache.delete(owner)
+  }
+
   private title(value: string): string {
     const title = value.trim()
     if (

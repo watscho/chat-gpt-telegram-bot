@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite'
+import sqlite, { type DatabaseSync } from 'node:sqlite'
 import { mkdirSync, chmodSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { Profile, Session, StateStore } from '../domain/state.js'
@@ -9,10 +9,10 @@ export class SQLiteStateStore implements StateStore {
   constructor(path: string) {
     if (path !== ':memory:')
       mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-    this.db = new DatabaseSync(path)
+    this.db = new sqlite.DatabaseSync(path)
     if (path !== ':memory:') chmodSync(path, 0o600)
     const version = this.db.prepare('PRAGMA user_version').get()?.user_version
-    if (version !== 0 && version !== 1) {
+    if (version !== 0 && version !== 1 && version !== 2) {
       this.db.close()
       throw new Error('Unsupported state database version')
     }
@@ -21,7 +21,8 @@ export class SQLiteStateStore implements StateStore {
       PRAGMA journal_mode = DELETE;
       CREATE TABLE IF NOT EXISTS sessions (key TEXT PRIMARY KEY, data TEXT NOT NULL, touched INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS profiles (key TEXT PRIMARY KEY, data TEXT NOT NULL);
-      PRAGMA user_version = 1;
+      CREATE TABLE IF NOT EXISTS records (scope TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (scope, key));
+      PRAGMA user_version = 2;
     `)
   }
   sessions(): [string, Session][] {
@@ -76,6 +77,48 @@ export class SQLiteStateStore implements StateStore {
     this.db
       .prepare('INSERT OR REPLACE INTO profiles (key, data) VALUES (?, ?)')
       .run(key, JSON.stringify(profile))
+  }
+  getRecord<T>(scope: string, key: string): T | undefined {
+    const row = this.db
+      .prepare('SELECT data FROM records WHERE scope = ? AND key = ?')
+      .get(scope, key)
+    return row ? (JSON.parse(String(row.data)) as T) : undefined
+  }
+  putRecord(scope: string, key: string, value: unknown): void {
+    this.db
+      .prepare(
+        'INSERT OR REPLACE INTO records (scope, key, data) VALUES (?, ?, ?)'
+      )
+      .run(scope, key, JSON.stringify(value))
+  }
+  records<T>(scope: string): [string, T][] {
+    return this.db
+      .prepare('SELECT key, data FROM records WHERE scope = ? ORDER BY key')
+      .all(scope)
+      .map(row => [String(row.key), JSON.parse(String(row.data)) as T])
+  }
+  deleteRecord(scope: string, key: string): void {
+    this.db
+      .prepare('DELETE FROM records WHERE scope = ? AND key = ?')
+      .run(scope, key)
+  }
+  deleteOwner(key: string): void {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.db.prepare('DELETE FROM profiles WHERE key = ?').run(key)
+      const prefix = `${key}:`
+      this.db
+        .prepare('DELETE FROM sessions WHERE substr(key, 1, length(?)) = ?')
+        .run(prefix, prefix)
+      // Minimal daily quota aggregates are retained until their accounting day expires.
+      this.db
+        .prepare("DELETE FROM records WHERE key = ? AND scope != 'usage'")
+        .run(key)
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
   }
   close(): void {
     this.db.close()

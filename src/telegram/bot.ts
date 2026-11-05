@@ -6,8 +6,20 @@ import { formatSources } from '../application/sources.js'
 import type { Speech } from '../domain/speech.js'
 import type { StateStore } from '../domain/state.js'
 import { downloadTelegramDocument } from '../infrastructure/documents.js'
+import { Workspaces } from '../application/workspaces.js'
+import { UsageLedger } from '../application/usage.js'
+import { ResponseControls } from '../application/response-controls.js'
+import { Jobs } from '../application/jobs.js'
+import type { JobInput } from '../domain/jobs.js'
+import { HistoryExport } from '../infrastructure/history-export.js'
+import { ProCommands } from './pro-commands.js'
 import { Conversations } from '../application/conversations.js'
-import type { Document, Image, LanguageModel } from '../domain/conversation.js'
+import type {
+  Document,
+  Image,
+  LanguageModel,
+  ReplyOptions
+} from '../domain/conversation.js'
 import { UserError } from '../domain/conversation.js'
 import { downloadTelegramImage } from '../infrastructure/images.js'
 import type { Message as TelegramMessage } from 'telegraf/types'
@@ -39,6 +51,11 @@ export function splitReply(text: string, limit = 4000): string[] {
   return chunks
 }
 
+export interface ManagedBot extends Telegraf {
+  tickJobs(): Promise<void>
+  stopJobs(): void
+}
+
 export function createBot({
   config,
   model,
@@ -48,18 +65,186 @@ export function createBot({
   downloadImage = downloadTelegramImage,
   downloadAudio = downloadTelegramAudio,
   reportError = () => console.error('Telegram update failed')
-}: BotDependencies): Telegraf {
+}: BotDependencies): ManagedBot {
   const bot = new Telegraf(config.telegramToken, {
     handlerTimeout: config.imageTimeoutMs + config.requestTimeoutMs * 4 + 30000
-  })
+  }) as ManagedBot
   const conversations = new Conversations(model, config, Date.now, store)
   const profiles = new Profiles(config, store)
+  const workspaces = new Workspaces(config, store)
+  const usage = new UsageLedger(config, workspaces, store)
+  const controls = new ResponseControls()
+  const exporter = new HistoryExport(config.maxExportBytes)
+  const sessionLocks = new Set<string>()
+  let background = 0
   const active = new Set<string>()
   const albums = new Map<string, { id: string; messages: TelegramMessage[] }>()
   const keyFor = (user: number, chat: number) => `${chat}:${user}`
   const ownerFor = (ctx: Context) => keyFor(ctx.from!.id, ctx.chat!.id)
   const sessionFor = (ctx: Context) =>
     `${ownerFor(ctx)}:${profiles.get(ownerFor(ctx)).active}`
+
+  const frozenInput = (
+    owner: string,
+    thread: string,
+    prompt: string,
+    images: Image[] = [],
+    documents: Document[] = []
+  ): JobInput => {
+    const history = conversations.history(`${owner}:${thread}`)
+    const project = workspaces.project(owner, thread)
+    const files = [
+      ...history.flatMap(message => message.documents ?? []),
+      ...(project?.documents ?? []),
+      ...documents
+    ]
+    const uniqueFiles = files
+      .filter(
+        (file, index) =>
+          !files
+            .slice(index + 1)
+            .some(next => next.name === file.name && next.data === file.data)
+      )
+      .slice(-10)
+    const photos = [
+      ...history.flatMap(message => message.images ?? []),
+      ...images
+    ]
+    const uniqueImages = photos
+      .filter(
+        (image, index) =>
+          !photos.slice(index + 1).some(next => next.data === image.data)
+      )
+      .slice(-10)
+    return {
+      prompt,
+      project: project?.id ?? null,
+      documents: uniqueFiles,
+      images: uniqueImages,
+      memories: [...profiles.get(owner).memories, ...(project?.notes ?? [])],
+      instructions: workspaces.instructions(owner, thread)
+    }
+  }
+  const jobs = new Jobs(
+    config,
+    {
+      allowed: owner => {
+        const parts = owner.split(':')
+        return (
+          parts.length === 2 &&
+          parts[0] === parts[1] &&
+          config.allowedUsers.has(Number(parts[1]))
+        )
+      },
+      available: (owner, thread) =>
+        !active.has(owner) &&
+        !sessionLocks.has(`${owner}:${thread}`) &&
+        active.size + background < config.maxConcurrentRequests,
+      input: (owner, thread, prompt) => frozenInput(owner, thread, prompt),
+      execute: async (owner, job, signal) => {
+        if (
+          !profiles.get(owner).threads.some(thread => thread.id === job.thread)
+        )
+          throw new UserError('The source conversation no longer exists.')
+        const session = `${owner}:${job.thread}`
+        if (
+          job.kind === 'summary' &&
+          !conversations.history(session).length &&
+          !job.input.documents.length &&
+          !job.input.images.length
+        )
+          throw new UserError(
+            'No retained conversation or reference content is available to summarize.'
+          )
+        sessionLocks.add(session)
+        background++
+        let reservation: ReturnType<UsageLedger['reserve']> | undefined
+        const options: ReplyOptions = {
+          signal,
+          documents: job.input.documents,
+          memories: [
+            ...profiles.get(owner).memories,
+            ...(workspaces
+              .get(owner)
+              .projects.find(project => project.id === job.input.project)
+              ?.notes ?? [])
+          ],
+          instructions: job.input.instructions,
+          search: job.kind === 'research',
+          enableImages: false,
+          enableSearch: job.kind === 'research',
+          ...(workspaces.thread(owner, job.thread).retentionSeconds !== null
+            ? {
+                retentionSeconds: workspaces.thread(owner, job.thread)
+                  .retentionSeconds!
+              }
+            : {}),
+          onStart: () => {
+            reservation = usage.reserve(
+              owner,
+              job.kind === 'research' ? 'search' : 'chat'
+            )
+            Object.assign(options, reservation.options)
+          }
+        }
+        try {
+          const prompt =
+            job.kind === 'compare'
+              ? `Compare the reference versions in a table of location, before, after, impact and evidence. Mark uncertainty. ${job.input.prompt}`
+              : job.kind === 'summary'
+                ? `Summarize the retained conversation and references, including decisions, outstanding work and uncertainties. ${job.input.prompt}`
+                : job.input.prompt
+          const answer = await conversations.respond(
+            session,
+            prompt,
+            job.input.images,
+            options
+          )
+          reservation!.finish(
+            answer.toolsUsed ?? {
+              images: answer.images.length,
+              searches: answer.sources?.length ? 1 : 0
+            }
+          )
+          return answer
+        } catch (error) {
+          reservation?.fail()
+          throw error
+        } finally {
+          sessionLocks.delete(session)
+          background--
+        }
+      },
+      deliver: async (owner, job) => {
+        const chat = Number(owner.split(':')[0])
+        for (const chunk of splitReply(
+          `Job ${job.id} · conversation ${job.thread}\n${job.result!.text}`
+        ))
+          await bot.telegram.sendMessage(chat, chunk)
+        for (const chunk of splitReply(formatSources(job.result!.sources)))
+          await bot.telegram.sendMessage(chat, chunk)
+        for (const image of job.result!.images)
+          await bot.telegram.sendDocument(
+            chat,
+            Input.fromBuffer(Buffer.from(image.data, 'base64'), 'image.png')
+          )
+      }
+    },
+    store
+  )
+  jobs.recover()
+  bot.tickJobs = () => jobs.tick()
+  bot.stopJobs = () => jobs.stop()
+  const pro = new ProCommands(
+    profiles,
+    conversations,
+    workspaces,
+    usage,
+    controls,
+    jobs,
+    exporter,
+    store
+  )
 
   bot.use(async (ctx, next) => {
     // Never expose group conversations or spend API credits for unknown users.
@@ -71,6 +256,30 @@ export function createBot({
       return
     const key = keyFor(ctx.from.id, ctx.chat.id)
     const msg = ctx.message
+    const callback =
+      ctx.callbackQuery && 'data' in ctx.callbackQuery
+        ? ctx.callbackQuery.data
+        : ''
+    if (
+      (msg && 'text' in msg && /^\/stop(?:@\w+)?$/.test(msg.text.trim())) ||
+      callback.startsWith('request:stop:')
+    ) {
+      const stopped = controls.stop(
+        key,
+        callback ? callback.slice(13) : undefined
+      )
+      if (callback)
+        await ctx.answerCbQuery(
+          stopped ? 'Stopping request.' : 'No matching active request.'
+        )
+      else
+        await ctx.reply(
+          stopped
+            ? 'Stopping request. Already-started provider work may still be billed.'
+            : 'No active request.'
+        )
+      return
+    }
     const group =
       msg && 'media_group_id' in msg ? msg.media_group_id : undefined
     const pending = albums.get(key)
@@ -78,11 +287,15 @@ export function createBot({
       if (pending.messages.length < 10) pending.messages.push(msg!)
       return
     }
-    if (active.has(key) || active.size >= config.maxConcurrentRequests) {
+    if (
+      active.has(key) ||
+      active.size + background >= config.maxConcurrentRequests
+    ) {
       await ctx.reply('Busy. Please wait for the current request to finish.')
       return
     }
     active.add(key)
+    ctx.state.request = controls.begin(key, profiles.get(key).active)
     try {
       if (group && msg) {
         const album = { id: group, messages: [msg] }
@@ -96,6 +309,7 @@ export function createBot({
     } finally {
       albums.delete(key)
       active.delete(key)
+      controls.end(key)
     }
   })
 
@@ -105,6 +319,10 @@ export function createBot({
     '/image description — generate; /edit instructions — edit images in context. Results arrive as original PNG files.',
     '/new [name] — create and switch conversation; /chats — list; /switch id; /rename name; /delete id.',
     '/reset — clear current history and attachments. /start displays help.',
+    '/usage, /budget, /limits — local cost estimates and daily controls. /stop cancels the active request.',
+    '/projects and /project — reference workspaces. /mode and /instructions — conversation behavior. /find, /export and /data — retained history and data export.',
+    '/compare — compare reference documents. /quality, /size, /versions and /revert — image workflow controls. /retention — conversation expiry.',
+    '/job, /jobs, /cancel and /result — background research/comparison/summary. /remind, /summary, /schedules, /unschedule and /timezone — schedules. /erase — content deletion.',
     '/remember note (or “remember: …”) — save a user note across conversations; /memory — view; /forget number | all (or exact note). Nothing is remembered automatically.',
     '/voice off | on | auto — voice replies (auto: only after voice input); /speak [text] — narrate text or the last answer. Voice is AI-generated. Text is always available.',
     'With the production store, history, photos and documents persist locally until TTL/eviction/reset; named conversations, saved notes and voice preferences persist until changed/deleted. Text, audio, files, notes and relevant history are sent to OpenAI. Search queries also reach search providers. API usage is billed.'
@@ -121,7 +339,18 @@ export function createBot({
       throw new UserError(
         'Text is too long for voice. Use /speak with a shorter passage.'
       )
-    const audio = await speech.synthesize(text)
+    const reservation = usage.reserve(ownerFor(ctx), 'voice')
+    let audio: Uint8Array
+    try {
+      audio = await speech.synthesize(
+        text,
+        controls.current(ownerFor(ctx))?.signal
+      )
+      reservation.finish()
+    } catch (error) {
+      reservation.fail()
+      throw error
+    }
     if (!audio.length || audio.length > config.maxSpeechBytes)
       throw new Error('Invalid voice output')
     await ctx.replyWithVoice(
@@ -151,6 +380,8 @@ export function createBot({
         await ctx.reply(help)
         break
       case 'reset':
+        jobs.cancelThread(owner, profiles.get(owner).active)
+        controls.clear(owner, false)
         conversations.reset(sessionFor(ctx))
         await ctx.reply(
           'Conversation cleared, including photos and documents. Saved notes and other conversations are preserved.'
@@ -186,6 +417,8 @@ export function createBot({
         break
       case 'delete':
         profiles.delete(owner, argument)
+        jobs.cancelThread(owner, argument)
+        workspaces.deleteThread(owner, argument)
         conversations.reset(`${owner}:${argument}`)
         await ctx.reply('Conversation and its history deleted.')
         break
@@ -271,13 +504,24 @@ export function createBot({
     if (file.file_size !== undefined && file.file_size > maxBytes)
       throw new UserError('Attachment exceeds the configured size limit.')
     const { url, remaining } = await fileLink(ctx, file.file_id, timeoutMs)
-    if (isImage) return { image: await downloadImage(url, maxBytes, remaining) }
+    if (isImage)
+      return {
+        image: await downloadImage(
+          url,
+          maxBytes,
+          remaining,
+          undefined,
+          controls.current(ownerFor(ctx))?.signal
+        )
+      }
     return {
       document: await downloadDocument(
         url,
         'file_name' in file ? file.file_name : 'document',
         maxBytes,
-        remaining
+        remaining,
+        undefined,
+        controls.current(ownerFor(ctx))?.signal
       )
     }
   }
@@ -289,6 +533,37 @@ export function createBot({
     voiceInput = false
   ): Promise<void> => {
     if (!images.length && !documents.length && (await manage(ctx, text))) return
+    const owner = ownerFor(ctx)
+    const thread = profiles.get(owner).active
+    const message = ctx.message
+    const repliedMessage =
+      message && 'reply_to_message' in message
+        ? message.reply_to_message
+        : undefined
+    const commandContext = {
+      owner,
+      thread,
+      text: async (value: string) => {
+        for (const chunk of splitReply(value)) await ctx.reply(chunk)
+      },
+      file: async (bytes: Uint8Array, name: string) => {
+        await ctx.replyWithDocument(Input.fromBuffer(Buffer.from(bytes), name))
+      },
+      repliedDocument: async () =>
+        repliedMessage
+          ? (await readAttachment(ctx, repliedMessage)).document
+          : undefined,
+      input: (prompt: string) =>
+        frozenInput(owner, thread, prompt, images, documents)
+    }
+    const handled = await pro.handle(commandContext, text)
+    if (handled === true) return
+    const analysisOnly = handled !== false
+    if (handled !== false) {
+      text = handled.prompt
+      images = handled.images
+      documents = handled.documents
+    }
     const command = text.match(/^\/(image|edit|search)(?:@\w+)?(?:\s+|$)/i)
     const action =
       command?.[1]?.toLowerCase() === 'image'
@@ -315,6 +590,41 @@ export function createBot({
       if (reference.image) images.push(reference.image)
       if (reference.document) documents.push(reference.document)
     }
+    const settings = workspaces.thread(owner, thread)
+    if (settings.imageVersion && !images.length && action === 'edit') {
+      const version = conversations
+        .versions(sessionFor(ctx))
+        .find(item => item.id === settings.imageVersion)
+      if (!version)
+        throw new UserError(
+          'Selected image source has expired. Use /versions or attach the image again.'
+        )
+      images.push(version.image)
+    }
+    const project = workspaces.project(owner, thread)
+    const combined = [...(project?.documents ?? []), ...documents]
+    documents = combined.filter(
+      (file, index) =>
+        !combined
+          .slice(index + 1)
+          .some(next => next.name === file.name && next.data === file.data)
+    )
+    const session = sessionFor(ctx)
+    const expected = ctx.state.responseRevision as
+      { value: string | undefined } | undefined
+    if (
+      expected &&
+      conversations.history(session).at(-1)?.id !== expected.value
+    )
+      throw new UserError(
+        'This response control is stale. The conversation changed while processing it.'
+      )
+    if (sessionLocks.has(session))
+      throw new UserError(
+        'This conversation has a background request running. Switch conversations or cancel its job.'
+      )
+    sessionLocks.add(session)
+    const current = controls.current(owner)!
     const signalProgress = () =>
       ctx
         .sendChatAction(action === 'auto' ? 'typing' : 'upload_photo')
@@ -324,29 +634,109 @@ export function createBot({
       void signalProgress()
     }, 4000)
     progress.unref()
+    let reservation: ReturnType<UsageLedger['reserve']> | undefined
+    let preview: number | undefined
+    let partial = ''
+    let lastUpdate = 0
     try {
+      if (config.streamResponses) {
+        const message = await ctx.reply('Working…', {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: 'Stop', callback_data: `request:stop:${current.token}` }]
+            ]
+          }
+        })
+        preview = message.message_id
+      }
+      const options: ReplyOptions = {
+        action,
+        signal: current.signal,
+        ...(command?.[1]?.toLowerCase() === 'search' ? { search: true } : {}),
+        memories: [...profiles.get(owner).memories, ...(project?.notes ?? [])],
+        documents,
+        instructions: workspaces.instructions(owner, thread),
+        imageQuality: settings.quality,
+        imageSize: settings.size,
+        ...(settings.retentionSeconds !== null
+          ? { retentionSeconds: settings.retentionSeconds }
+          : {}),
+        ...(preview !== undefined
+          ? {
+              onText: async (delta: string) => {
+                partial += delta
+                if (Date.now() - lastUpdate < 1000) return
+                lastUpdate = Date.now()
+                await ctx.telegram
+                  .editMessageText(
+                    ctx.chat!.id,
+                    preview,
+                    undefined,
+                    splitReply(partial)[0] || 'Working…'
+                  )
+                  .catch(() => undefined)
+              }
+            }
+          : {}),
+        onStart: () => {
+          reservation = usage.reserve(
+            owner,
+            analysisOnly
+              ? 'chat'
+              : action === 'generate'
+                ? 'image'
+                : action === 'edit'
+                  ? 'image'
+                  : command?.[1]?.toLowerCase() === 'search'
+                    ? 'search'
+                    : 'auto'
+          )
+          Object.assign(options, reservation.options)
+        }
+      }
       const answer = await conversations.respond(
-        sessionFor(ctx),
+        session,
         prompt ||
           (documents.length
             ? 'Summarize these documents and describe what questions you can answer about them.'
             : 'Describe this image and offer ways to work with it.'),
         images,
-        {
-          action,
-          ...(command?.[1]?.toLowerCase() === 'search' ? { search: true } : {}),
-          memories: profiles.get(ownerFor(ctx)).memories,
-          documents
+        options
+      )
+      reservation!.finish(
+        answer.toolsUsed ?? {
+          images: answer.images.length,
+          searches: answer.sources?.length ? 1 : 0
         }
       )
-      for (const chunk of splitReply(answer.text)) await ctx.reply(chunk)
+      const token = controls.complete(
+        owner,
+        thread,
+        conversations.history(session).at(-1)?.id
+      )
+      const markup = controls.buttons(token, answer.images.length > 0)
+      const chunks = splitReply(answer.text)
+      if (preview !== undefined) {
+        const first = chunks.shift() || 'Image ready.'
+        await ctx.telegram
+          .editMessageText(ctx.chat!.id, preview, undefined, first, {
+            reply_markup: markup
+          })
+          .catch(async () => {
+            await ctx.reply(first, { reply_markup: markup })
+          })
+      }
+      for (const chunk of chunks)
+        await ctx.reply(chunk, { reply_markup: markup })
       for (const chunk of splitReply(formatSources(answer.sources)))
         await ctx.reply(chunk)
-      for (const image of answer.images) {
+      for (const image of answer.images)
         await ctx.replyWithDocument(
-          Input.fromBuffer(Buffer.from(image.data, 'base64'), 'image.png')
+          Input.fromBuffer(Buffer.from(image.data, 'base64'), 'image.png'),
+          { reply_markup: markup }
         )
-      }
+      if (answer.images.length)
+        workspaces.configure(owner, thread, { imageVersion: null })
       const voice = profiles.get(ownerFor(ctx)).voice
       if (answer.text && (voice === 'on' || (voice === 'auto' && voiceInput))) {
         try {
@@ -360,10 +750,102 @@ export function createBot({
           )
         }
       }
+    } catch (error) {
+      reservation?.fail()
+      if (preview !== undefined)
+        await ctx.telegram
+          .editMessageText(
+            ctx.chat!.id,
+            preview,
+            undefined,
+            current.signal.aborted
+              ? 'Stopped.'
+              : 'Unable to complete this response.'
+          )
+          .catch(() => undefined)
+      throw error
     } finally {
+      sessionLocks.delete(session)
       clearInterval(progress)
     }
   }
+  bot.on('callback_query', async ctx => {
+    if (!('data' in ctx.callbackQuery)) {
+      await ctx.answerCbQuery('Unsupported control.')
+      return
+    }
+    const [scope, action, ...rest] = ctx.callbackQuery.data.split(':')
+    const owner = ownerFor(ctx)
+    const thread = profiles.get(owner).active
+    if (scope === 'setting') {
+      const value = rest.shift()!
+      controls.validate(
+        owner,
+        thread,
+        rest.join(':'),
+        conversations.history(sessionFor(ctx)).at(-1)?.id
+      )
+      if (action === 'quality')
+        workspaces.configure(owner, thread, { quality: value as 'high' })
+      else if (action === 'size')
+        workspaces.configure(owner, thread, { size: value as 'auto' })
+      else throw new UserError('Unknown image setting.')
+      await ctx.answerCbQuery('Image setting updated.')
+      return
+    }
+    if (scope !== 'response') {
+      await ctx.answerCbQuery('Unknown control.')
+      return
+    }
+    await ctx.answerCbQuery()
+    const revision = conversations.history(sessionFor(ctx)).at(-1)?.id
+    controls.validate(owner, thread, rest.join(':'), revision)
+    ctx.state.responseRevision = { value: revision }
+    if (action === 'speak') {
+      await speak(ctx, conversations.lastReply(sessionFor(ctx)) || '')
+      return
+    }
+    const history = conversations.history(sessionFor(ctx))
+    if (action === 'retry') {
+      const request = history.findLast(message => message.role === 'user')
+      if (!request)
+        throw new UserError('Original request is no longer retained.')
+      await respond(ctx, request.content, request.images, request.documents)
+      return
+    }
+    if (action === 'shorter' || action === 'more') {
+      await respond(
+        ctx,
+        action === 'shorter'
+          ? 'Rewrite your last answer more concisely, preserving the important facts and sources.'
+          : 'Expand your last answer with useful detail, examples and explicit uncertainty.'
+      )
+      return
+    }
+    if (action === 'variation' || action === 'previous') {
+      const versions = conversations.versions(sessionFor(ctx))
+      const selected = workspaces.thread(owner, thread).imageVersion
+      const index = selected
+        ? versions.findIndex(version => version.id === selected)
+        : versions.length - 1
+      const version = versions[action === 'previous' ? index - 1 : index]
+      if (!version)
+        throw new UserError(
+          'No retained image version is available for this action.'
+        )
+      if (action === 'previous') {
+        workspaces.configure(owner, thread, { imageVersion: version.id })
+        await ctx.reply(`Selected source ${version.id} for the next edit.`)
+      } else
+        await respond(
+          ctx,
+          '/image Create a new variation of this reference image while preserving its subject.',
+          [version.image]
+        )
+      return
+    }
+    throw new UserError('Unknown response action.')
+  })
   bot.on(message('text'), async ctx => {
     await respond(ctx, ctx.message.text)
   })
@@ -414,7 +896,18 @@ export function createBot({
       config.requestTimeoutMs
     )
     const audio = await downloadAudio(url, config.maxVoiceBytes, remaining)
-    const text = await model.transcribe(audio)
+    const transcription = usage.reserve(ownerFor(ctx), 'transcription')
+    let text: string
+    try {
+      text = await model.transcribe(
+        audio,
+        controls.current(ownerFor(ctx))?.signal
+      )
+      transcription.finish()
+    } catch (error) {
+      transcription.fail()
+      throw error
+    }
     if (!text.trim() || text.length > config.maxInputCharacters)
       throw new UserError(
         'Transcription is empty or too long. Send a shorter voice message.'
@@ -425,12 +918,16 @@ export function createBot({
   })
   bot.catch(async (error, ctx) => {
     // SDK/network errors can contain credentials, URLs, prompts, and transcripts.
-    if (!(error instanceof UserError)) reportError()
+    const stopped = (ctx.state.request as { signal: AbortSignal } | undefined)
+      ?.signal.aborted
+    if (!stopped && !(error instanceof UserError)) reportError()
     await ctx
       .reply(
-        error instanceof UserError
-          ? error.message
-          : 'Unable to process your message. Please try again.'
+        stopped
+          ? 'Request stopped. Already-started work may still be billed.'
+          : error instanceof UserError
+            ? error.message
+            : 'Unable to process your message. Please try again.'
       )
       .catch(() => {
         reportError()

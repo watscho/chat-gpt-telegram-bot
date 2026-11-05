@@ -26,9 +26,10 @@ export class RealtimeSpeech implements Speech {
       new OpenAIRealtimeWebSocket({ model: config.speechModel }, client),
     private readonly encode = encodeVoice
   ) {}
-  async synthesize(text: string): Promise<Uint8Array> {
+  async synthesize(text: string, signal?: AbortSignal): Promise<Uint8Array> {
     if (!text.trim() || text.length > this.config.maxSpeechCharacters)
       throw new UserError('Text is too long for a voice reply.')
+    if (signal?.aborted) throw new UserError('Request stopped.')
     const deadline = Date.now() + this.config.requestTimeoutMs
     const pcm = await new Promise<Uint8Array>((resolve, reject) => {
       const connection = this.connect()
@@ -39,10 +40,13 @@ export class RealtimeSpeech implements Speech {
         if (settled) return
         settled = true
         clearTimeout(timer)
+        signal?.removeEventListener('abort', cancelled)
         connection.close()
         if (error) reject(error)
         else resolve(Buffer.concat(chunks))
       }
+      const cancelled = () => finish(new UserError('Request stopped.'))
+      signal?.addEventListener('abort', cancelled, { once: true })
       const timer = setTimeout(
         () => finish(new Error('Speech request timed out')),
         this.config.requestTimeoutMs
@@ -108,7 +112,8 @@ export class RealtimeSpeech implements Speech {
       pcm,
       this.config.ffmpegPath,
       this.config.maxSpeechBytes,
-      remaining
+      remaining,
+      signal
     )
   }
 }

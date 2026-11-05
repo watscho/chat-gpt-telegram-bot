@@ -1,5 +1,21 @@
 # Changelog
 
+## 4.0.0 — Pro workspaces and durable work
+
+- Add UTC daily usage, operator/user limits and conservative estimated-spend reservations for chat, tools, transcription and narration.
+- Stream text previews with Stop; add owner/thread/revision-bound retry, shorter, more-detail and read-aloud controls.
+- Add projects with shared reference documents/instructions/explicit notes, plus per-conversation modes and custom instructions.
+- Add retained-history search, Markdown/JSON/PDF exports with bundled licensed font, and structured document comparison.
+- Add per-conversation image quality/size, variations and retained image-source selection with stable legacy identifiers.
+- Add bounded durable research/comparison/summary jobs, inspect/cancel/result controls, conservative restart recovery and independent delivery retries.
+- Add timezone-aware one-off reminders and recurring reminders/summaries with missed-occurrence coalescing.
+- Add owner data export/erasure and per-conversation retention; preserve minimal UTC-day quota aggregates after erasure.
+- Upgrade SQLite to schema 2 while preserving existing profiles/sessions; document backup-based rollback.
+- Restrict all automated tests to adjacent unit tests. Replace actual SQLite/filesystem, process lifecycle, FFmpeg and PDF rendering with controlled doubles. Remove Docker/FFmpeg execution from CI; retain 100% executable source lines/branches/functions.
+- Expand configuration, user workflows, architecture, operations, security and phased acceptance documentation.
+
+Breaking changes: streaming and UTC daily estimated-spend/count quotas are enabled by default. Costs are configurable estimates, not provider billing caps. Schema 2 cannot be opened by version 3; restore a pre-upgrade backup to roll back. Jobs/projects retain content independently of history TTL. PDF export requires the bundled assets directory and rejects unsupported Unicode in favor of lossless Markdown/JSON. Only unit/static checks qualify this release; native/provider/deployment behavior is not certified.
+
 ## 3.0.1 — English documentation and examples
 
 - Translate the user guide into English and rename it to `docs/USER_GUIDE.md`.

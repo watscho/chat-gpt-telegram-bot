@@ -1,6 +1,6 @@
 # Telegram AI Bot Pro
 
-A private TypeScript Telegram assistant with text and voice conversations, photo analysis and editing, image generation, web search with sources, document questions, named conversations and explicit saved memory. MIT licensed.
+A private TypeScript Telegram assistant with text and voice conversations, photo analysis and editing, image generation, web search with sources, document questions, projects, named conversations, explicit saved memory, usage controls, streaming replies and durable background jobs. MIT licensed.
 
 “Pro” names this repository's feature set. It does not grant a ChatGPT subscription or provider account access.
 
@@ -84,23 +84,43 @@ Production state is saved to `STATE_DB_PATH` (default `./data/bot.sqlite`). **Te
 
 Saved conversation names, notes and voice settings survive restarts. Retained message history and attachments also survive restarts **within TTL and capacity limits**. History defaults to one hour of inactivity and 20 complete turns per conversation. Expired histories are pruned at startup and on subsequent conversation access; names and explicit notes are retained separately. `/reset` preserves other conversations and saved notes. `/forget` removes saved notes but cannot erase earlier text containing the same information; clear affected conversations too when needed.
 
-Per-user concurrency is serialized across all their conversations. Overlapping updates and commands receive a busy response rather than being queued. Provider failures do not commit partial turns. Successful complete-turn writes and capacity evictions are transactional in SQLite. Text and media have bounded request/history budgets. These are resource limits, not monetary quotas.
+Foreground updates are serialized per user. A background job locks its conversation; foreground work in another conversation can proceed within the global concurrency cap. `/stop` remains available during foreground work. Overlapping foreground updates receive a busy response. Provider failures do not commit partial turns. Successful complete-turn writes and capacity evictions are transactional in SQLite. Text and media have bounded request/history budgets. Daily quotas and configurable estimated-spend reservations apply separately; see the Pro workspace commands below. Estimates are not provider invoices or a hard billing cap.
 
 Text, audio, attached files, saved notes and relevant history are sent to OpenAI for requested processing. Search may send generated queries to search providers. Responses use `store: false`; this does not establish zero retention by OpenAI or Telegram. Requests and raw provider exceptions are not logged. The SQLite file is access-restricted but is **not encrypted at rest** by this application.
+
+## Pro workspaces and controls
+
+| Workflow                        | Commands or controls                                                                                     |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Usage and local spending limits | `/usage`, `/budget 5`, `/limits image 3`                                                                 |
+| Incremental answers             | Streaming text; Stop, Retry, Shorter, More detail and Read aloud buttons                                 |
+| Projects and references         | `/projects`, `/project new Work`, `/project use id`, `/project attach` when replying to a document       |
+| Conversation preferences        | `/mode developer`, `/instructions text`, `/retention 3600`                                               |
+| History and exports             | `/find words`, `/export markdown`, `/export pdf`, `/export json`                                         |
+| Document comparison             | `/compare focus` with two retained/project documents                                                     |
+| Image controls                  | `/quality medium`, `/size 1536x1024`, `/versions`, `/revert id`; variation and previous-version buttons  |
+| Background work                 | `/job research question`, `/jobs`, `/cancel id`, `/result id`, `/job delete id`                          |
+| Reminders and summaries         | `/timezone Asia/Tbilisi`, `/remind every 2h \| Take a break`, `/summary every 1d \| Summarize decisions` |
+| Schedule management             | `/schedules`, `/unschedule id`                                                                           |
+| Local data controls             | `/data`, `/erase`, `/erase confirm`                                                                      |
+
+Daily accounting uses UTC regardless of schedule timezone. Defaults allow 100 paid operations and $10 of **configured cost estimates** per owner/day. Tool calls and speech have separate limits. Failures and cancelled attempts retain their reservations because provider charges may already have occurred. Configure provider-side spending controls too. `/erase` retains minimal current-day quota counters to prevent limit bypass.
+
+Projects and jobs retain files independently of conversation TTL. PDF export embeds a bundled font for Latin, Greek and Cyrillic text with limited punctuation; unsupported characters produce a clear error directing you to Markdown/JSON. No cloud PDF conversion is used. See the [user guide](docs/USER_GUIDE.md) for full syntax and lifecycle rules.
 
 ## Development and tests
 
 ```sh
-npm run check          # types, lint, formatting, offline tests and production build
-npm run test:coverage  # require 100% lines, branches and functions across executable src
-npm audit              # dependency advisory check
+npm run check          # types, lint, formatting, unit tests and production compilation
+npm run test:unit      # unit tests only; npm test is equivalent
+npm run test:coverage  # require 100% executable src lines, branches and functions
 ```
 
-Tests live beside their implementation in `__tests__`, for example `src/telegram/__tests__/bot.test.ts`. Shared helpers and process fixtures live in `src/__tests__`. Production compilation excludes every `__tests__` directory. Coverage excludes test files and fixtures only; production code has no coverage-ignore annotations.
+Tests live beside their implementation in `__tests__`; shared in-memory doubles live in `src/__tests__/helpers.ts`. Production compilation excludes every `__tests__` directory. Only test files are excluded from coverage; production code has no coverage-ignore annotations.
 
-The suite covers application behavior, the real Telegraf pipeline with fake transport, actual OpenAI SDK HTTP/WebSocket contracts with fake transport, SQLite durability/transactions, native FFmpeg encoding and process shutdown. Tests require no real API keys and spend no API credits. Full offline coverage does not prove live model/account compatibility, speech fidelity or deployment readiness.
+**Only unit tests are authorized and maintained.** HTTP/WebSocket transports, SQLite/filesystem access, process lifecycle, FFmpeg spawning and PDF rendering use controlled doubles. Tests do not call live services, open databases, run application subprocesses, invoke FFmpeg, build Docker or render browsers. They require no API keys and incur no API charges. Node's experimental module-mocking flag is included in test scripts.
 
-CI installs FFmpeg, runs checks and the 100% coverage gate, audits dependencies and builds Docker. npm is the sole package manager; commit lockfile changes with dependency changes.
+CI runs static checks, unit tests, the 100% coverage gate and a dependency advisory query (`npm audit`, network metadata only). It does not install FFmpeg or build Docker. Unit coverage establishes exercised local control flow; live model access, native SQLite durability, PDF layout, audio fidelity and deployment behavior remain unqualified. npm is the sole package manager; commit lockfile changes with dependencies.
 
 ## Documentation
 
@@ -108,6 +128,7 @@ CI installs FFmpeg, runs checks and the 100% coverage gate, audits dependencies 
 - [Configuration reference](docs/configuration.md)
 - [Operations, Docker, backups and live verification](docs/operations.md)
 - [Architecture and test conventions](docs/architecture.md)
+- [Pro roadmap and acceptance](docs/pro-roadmap.md)
 - [Changelog](CHANGELOG.md), [contributing](CONTRIBUTING.md), [security](SECURITY.md), [license](LICENSE)
 
 Official API references: [web search](https://developers.openai.com/api/docs/guides/tools-web-search), [image generation](https://developers.openai.com/api/docs/guides/tools-image-generation), [file inputs](https://developers.openai.com/api/docs/guides/file-inputs), [Realtime audio](https://developers.openai.com/api/docs/guides/realtime-conversations), [Telegram Bot API](https://core.telegram.org/bots/api).

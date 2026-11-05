@@ -1,4 +1,22 @@
 export interface Config {
+  streamResponses: boolean
+  dailyBudgetMicroUsd: number
+  dailyRequests: number
+  dailyImages: number
+  dailySearches: number
+  dailyVoice: number
+  estimateChat: number
+  estimateImage: number
+  estimateSearch: number
+  estimateVoice: number
+  estimateTranscription: number
+  maxProjects: number
+  maxProjectBytes: number
+  maxJobs: number
+  maxJobBytes: number
+  maxSchedules: number
+  maxExportBytes: number
+  workerIntervalMs: number
   statePath: string
   maxThreads: number
   maxMemories: number
@@ -75,6 +93,33 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     )
   }
   return {
+    streamResponses:
+      choice('STREAM_RESPONSES', ['true', 'false'], 'true') === 'true',
+    dailyBudgetMicroUsd: integer(
+      'DAILY_BUDGET_MICRO_USD',
+      10000000,
+      1000000000
+    ),
+    dailyRequests: integer('DAILY_REQUESTS', 100, 10000),
+    dailyImages: integer('DAILY_IMAGES', 20, 1000),
+    dailySearches: integer('DAILY_SEARCHES', 100, 10000),
+    dailyVoice: integer('DAILY_VOICE', 50, 1000),
+    estimateChat: integer('ESTIMATE_CHAT_MICRO_USD', 100000, 10000000),
+    estimateImage: integer('ESTIMATE_IMAGE_MICRO_USD', 500000, 10000000),
+    estimateSearch: integer('ESTIMATE_SEARCH_MICRO_USD', 10000, 10000000),
+    estimateVoice: integer('ESTIMATE_VOICE_MICRO_USD', 100000, 10000000),
+    estimateTranscription: integer(
+      'ESTIMATE_TRANSCRIPTION_MICRO_USD',
+      100000,
+      10000000
+    ),
+    maxProjects: integer('MAX_PROJECTS', 10, 100),
+    maxProjectBytes: integer('MAX_PROJECT_BYTES', 20000000, 64000000),
+    maxJobs: integer('MAX_JOBS', 20, 100),
+    maxJobBytes: integer('MAX_JOB_BYTES', 20000000, 64000000),
+    maxSchedules: integer('MAX_SCHEDULES', 20, 100),
+    maxExportBytes: integer('MAX_EXPORT_BYTES', 20000000, 64000000),
+    workerIntervalMs: integer('WORKER_INTERVAL_MS', 1000, 60000),
     statePath: env.STATE_DB_PATH?.trim() || './data/bot.sqlite',
     maxThreads: integer('MAX_THREADS', 20, 100),
     maxMemories: integer('MAX_MEMORIES', 20, 100),

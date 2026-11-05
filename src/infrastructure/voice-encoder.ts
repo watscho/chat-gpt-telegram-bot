@@ -5,7 +5,8 @@ export async function encodeVoice(
   pcm: Uint8Array,
   executable: string,
   maxBytes: number,
-  timeoutMs: number
+  timeoutMs: number,
+  signal?: AbortSignal
 ): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     const child = spawn(
@@ -34,7 +35,9 @@ export async function encodeVoice(
       ],
       {
         stdio: ['pipe', 'pipe', 'ignore'],
-        signal: AbortSignal.timeout(timeoutMs)
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+          : AbortSignal.timeout(timeoutMs)
       }
     )
     const chunks: Buffer[] = []

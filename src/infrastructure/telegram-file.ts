@@ -5,7 +5,8 @@ export async function downloadTelegramFile(
   maxBytes: number,
   timeoutMs: number,
   fetcher: typeof fetch = fetch,
-  label = 'File'
+  label = 'File',
+  signal?: AbortSignal
 ): Promise<Uint8Array> {
   if (
     url.protocol !== 'https:' ||
@@ -19,7 +20,9 @@ export async function downloadTelegramFile(
   }
   const response = await fetcher(url, {
     redirect: 'error',
-    signal: AbortSignal.timeout(timeoutMs)
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+      : AbortSignal.timeout(timeoutMs)
   })
   if (!response.ok || !response.body) {
     await response.body?.cancel().catch(() => undefined)

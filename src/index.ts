@@ -1,11 +1,15 @@
-import OpenAI from 'openai'
-import { ConfigurationError, loadConfig } from './config.js'
-import { OpenAIModel } from './infrastructure/openai-model.js'
-import { SQLiteStateStore } from './infrastructure/state-store.js'
-import { RealtimeSpeech } from './infrastructure/realtime-speech.js'
-import { createBot } from './telegram/bot.js'
+import { ConfigurationError } from './config.js'
+import { dependencies } from './infrastructure/dependencies.js'
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
+  const {
+    loadConfig,
+    OpenAI,
+    SQLiteStateStore,
+    OpenAIModel,
+    RealtimeSpeech,
+    createBot
+  } = dependencies
   const config = loadConfig()
   const client = new OpenAI({
     apiKey: config.openaiKey,
@@ -19,11 +23,20 @@ async function main(): Promise<void> {
     store,
     speech: new RealtimeSpeech(client, config)
   })
-  process.once('exit', () => store.close())
+  let worker: ReturnType<typeof setInterval> | undefined
+  const stopWorker = () => {
+    if (worker) clearInterval(worker)
+    bot.stopJobs()
+  }
+  process.once('exit', () => {
+    stopWorker()
+    store.close()
+  })
   let stopping = false
   const shutdown = (signal: string): void => {
     if (stopping) return
     stopping = true
+    stopWorker()
     try {
       bot.stop(signal)
     } catch {
@@ -41,10 +54,14 @@ async function main(): Promise<void> {
   process.once('SIGTERM', () => shutdown('SIGTERM'))
   await bot.launch({ dropPendingUpdates: true }, () => {
     console.info('Telegram bot authenticated; starting polling')
+    worker = setInterval(() => {
+      void bot.tickJobs().catch(() => console.error('Background worker failed'))
+    }, config.workerIntervalMs)
+    worker.unref()
   })
 }
 
-main().catch((error: unknown) => {
+export function reportFailure(error: unknown): void {
   // Do not print provider exceptions: Telegram URLs contain the bot token.
   console.error(
     error instanceof ConfigurationError
@@ -52,4 +69,6 @@ main().catch((error: unknown) => {
       : 'Bot startup or polling failed. Check configuration and provider access.'
   )
   process.exitCode = 1
-})
+}
+
+void main().catch(reportFailure)

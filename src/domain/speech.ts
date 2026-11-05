@@ -1,3 +1,3 @@
 export interface Speech {
-  synthesize(text: string): Promise<Uint8Array>
+  synthesize(text: string, signal?: AbortSignal): Promise<Uint8Array>
 }

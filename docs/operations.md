@@ -2,19 +2,25 @@
 
 ## Run and store state
 
-Run exactly **one polling process per bot token**. Multiple replicas conflict on Telegram polling and do not share in-memory locks. The SQLite file is local durable state, not a distributed coordination mechanism. No inbound HTTP server or port is required. Outbound HTTPS and secure WebSocket access to providers is required.
+Run exactly **one polling process per bot token**. Replicas conflict on Telegram polling and do not share in-memory locks/quotas/caches. SQLite is local durable state, not distributed coordination. No inbound HTTP server is needed. Production requires outbound HTTPS/WebSocket access and a private writable state directory.
 
 ```sh
-npm ci
+npm ci --ignore-scripts
 npm run build
 npm start
 ```
 
-A build never copies `.env`, databases or tests into `dist`. Place the database in a private writable directory. On Unix, new directories use mode `0700` and the database uses `0600`; existing parent-directory permissions remain the operator's responsibility. The default `data/` directory and SQLite files are ignored by Git and Docker build context.
+The build excludes tests, credentials and databases from `dist`. New Unix directories use `0700`, database files `0600`; existing parent permissions remain the operator's responsibility. SQLite is not encrypted by the application. The ignored `data/` directory should be on persistent private storage. `STATE_DB_PATH=:memory:` is disposable.
 
-The database uses schema version 1. A newer unsupported schema or corrupt state fails with sanitized errors. Do not edit stored JSON while the bot is running. Successful turns and capacity evictions commit together. Failed provider responses leave prior completed history intact; failed database commits do not publish replacement history in memory.
+## Schema 2 migration and rollback
 
-## Docker
+Version 4 accepts SQLite schema 0/1/2 and upgrades older databases to schema 2 on open, adding scoped JSON records for workspaces, usage and queues while retaining profiles/sessions. Unknown newer schemas and corrupt state fail with sanitized errors. This migration has unit-contract coverage only; no real database migration test was run.
+
+Before upgrading, stop the bot and copy the complete database to a private backup. Upgrade the application and retain the original backup until the operator accepts the migration. Version 3 rejects schema 2: rollback requires stopping the bot, restoring the pre-upgrade backup and using the previous application/dependencies. Changes since the backup will be lost. Never downgrade by manually changing `user_version` or editing stored JSON.
+
+Complete-turn replacement and capacity evictions are transactional. Failed provider work leaves prior history intact. Persistence failures do not publish replacement cached state. Generic workspace/queue/usage updates are separate writes, so multi-command operations are not a global cross-scope transaction.
+
+## Docker definition
 
 ```sh
 docker build -t telegram-ai-bot-pro .
@@ -26,34 +32,36 @@ docker run --rm --init --name telegram-ai-bot-pro \
   telegram-ai-bot-pro
 ```
 
-The runtime image includes FFmpeg/libopus and runs as the unprivileged `node` user. The persistent volume holds private history and attachments. Bind mounts must be writable by that user. For intentionally disposable state set `STATE_DB_PATH=:memory:`.
+These are operator deployment instructions, **not automated test steps**. No Docker build/run is part of this release's verification. The definition includes FFmpeg/libopus and bundled PDF fonts and runs as the unprivileged `node` user. Bind mounts must be writable by that user. Keep `assets/fonts` alongside `dist` for PDF exports; the font license is included there.
 
-`SIGINT` and `SIGTERM` stop polling. In-flight work has a bounded 10-second process shutdown window, so stopping during a long generation can interrupt delivery. Completed durable writes survive restart. Pending Telegram updates are dropped on startup to avoid stale requests and unexpected API charges. Requests are not retried automatically.
+## Jobs, schedules and shutdown
 
-## Backups and deletion
+The worker ticks every `WORKER_INTERVAL_MS` and runs one background execution at a time. Foreground work in another conversation can proceed within the global cap. Scheduled jobs obey allowlisting, reference validation and UTC quotas. Reminders have no model call. Recurrences coalesce missed intervals rather than replaying all missed work. A full queue delays due occurrences; completed records must be explicitly removed.
 
-Stop the bot, copy the SQLite database to a private backup destination, then restart. Restore only while stopped, retaining private permissions and using a compatible application version. A fresh SQLite file is created automatically if the configured database is absent. Backups contain text, images, documents and explicit user notes; manage their retention separately.
+`SIGINT`/`SIGTERM` stop polling/worker scheduling and abort active background work, with a bounded 10-second shutdown window. Interrupted paid attempts recover as `uncertain` and require a deliberate new job; they are not automatically rerun. Interrupted reminders can resume. Queued jobs persist. Pending Telegram updates are dropped at startup to avoid stale foreground charges.
 
-History expires after inactivity and is pruned at startup and subsequent history access. There is no background scheduler guaranteeing erasure at the exact TTL instant. Conversation names, explicit notes and voice preferences are stored separately and do not expire with history. `/reset` clears the active history; `/delete id` deletes the selected slot and its history, subject to keeping one slot; `/forget all` removes explicit notes. Clear other affected conversations if old answers contain a forgotten fact. SQLite secure deletion is enabled, but external backups and provider copies require separate handling. Database files may retain reusable free pages rather than shrinking after deletion.
+Successful execution and delivery have separate state. Delivery retries at most three times with 60-second backoff. A crash after Telegram accepts a message but before the local acknowledgement can duplicate delivery. `/result id` manually resends a retained result without a paid rerun; its automatic-delivery status remains unchanged. This is not exactly-once delivery.
+
+Jobs freeze files/instructions and origin project ID, with explicit notes resolved at execution. Schedules capture references when an occurrence materializes. No-context summaries fail before paid work. Deleting/resetting a conversation cancels its queued/running work and schedules; retained completed results require explicit job deletion. Queue payload admission and provider output bounds limit memory, but `MAX_JOB_BYTES` is not a hard database size ceiling.
+
+## Backups, retention and local deletion
+
+Stop the bot before copying/restoring SQLite. Protect backups and define retention separately; they contain messages, encoded attachments, projects, notes, usage and queue/schedule payloads. A fresh database is created if the configured file is absent.
+
+History pruning occurs at startup and access, not at an exact background deadline. Per-thread `/retention` changes future inactivity TTL; shortening also shortens existing expiry. Project files, notes, names, preferences, jobs/results and schedules do not inherit history TTL. Removing project data cannot remove copies already captured in history/jobs.
+
+`/reset` clears active history, invalidates controls and cancels that conversation's pending work/schedules. `/delete id` removes a conversation slot/history/settings, keeping at least one slot. `/forget all` removes explicit global notes; project notes have `/project forget all`. None rewrites old answer text.
+
+`/data` produces a bounded owner archive. `/erase confirm` aborts owner work and removes profiles, histories, attachments, workspaces, queue and schedules. Minimal UTC-day usage aggregates are intentionally retained to prevent quota bypass; they roll over logically on access and are replaced on the next reservation. Existing Telegram messages, provider copies and backups are outside local erasure. SQLite secure deletion is enabled, but files can retain reusable free pages rather than shrink.
 
 ## Costs and diagnosis
 
-Set provider budgets and monitor billing. Local concurrency, token, file and tool-call limits are not monetary quotas. Disabling voice with `/voice off` stops automatic narration; `/speak` still explicitly requests it. A voice failure preserves the delivered text. Check FFmpeg availability and Realtime model access if narration fails.
+Set provider-side budgets and monitor billing. Daily local spending uses configured fixed estimates, not actual provider token/image/audio charges. Reserve before paid work; successful responses refund unused tool estimates, while failed/cancelled/uncertain attempts retain reservations. One voice interaction may include separate transcription, answer and narration reservations. User timezone does not alter UTC quota accounting. See [configuration](configuration.md).
 
-Configuration errors identify missing/invalid keys. Other failures deliberately omit raw provider errors and URLs because those may include bot tokens or user content. Check account dashboards, model access, network egress, writable disk space and the configured executable without logging private payloads.
+Raw exceptions, payloads and token-bearing Telegram URLs are deliberately omitted from logs/errors. Check account dashboards, model/tool access, egress, writable disk, allowlisting and trusted FFmpeg/libopus availability without logging private content. PDF unsupported-character errors should be handled using Markdown/JSON. Font packaging is statically checked; real rendering has not been qualified.
 
-## Live verification
+## Verification boundary
 
-Use a dedicated bot, allowlisted account and non-sensitive test files. Live requests incur provider charges.
+Only unit tests are maintained and run: controlled transports, in-memory persistence, mocked SQLite/filesystem constructors, fake clocks, lifecycle events, FFmpeg spawn events and PDF renderer output. Static type/lint/format checks and compilation run separately. CI also queries dependency advisories, which is not a live application test.
 
-1. Send text and voice. Confirm transcription, a text answer and `/reset` behavior.
-2. Upload a photo with a question, follow up, generate with `/image`, edit with `/edit`, then reply to an older image to select it.
-3. Upload a PDF with a known answer and page reference. Ask a follow-up. Repeat with DOCX and UTF-8 text; reject an unsupported file and an oversized input.
-4. Run `/search` for a current fact. Open returned sources and verify the claim and reference numbers. Try a fresh-fact question without the command.
-5. Create a named conversation, switch back and confirm history isolation. Verify another allowlisted user cannot access it.
-6. Save a harmless note, list it, use another conversation, then delete the note and verify it is no longer supplied on future requests.
-7. Enable `/voice auto`: text messages get text; voice input gets text plus an AI-labelled OGG/Opus reply. Test `/speak` and `/voice off`.
-8. Restart with the same database before TTL expiry. Verify selection, notes, voice preferences and retained file/text context. Test deletion and reset again after restart.
-9. Verify an unlisted user and a group chat receive no responses or provider calls. Exercise a busy response without duplicating the paid request.
-
-The offline suite validates contracts and state behavior. It cannot certify live model/tool availability, provider PDF extraction, image quality, narration accuracy or deployment connectivity. Record live outcomes separately from automated coverage.
+No paid provider requests, actual database migration/durability, FFmpeg encoding, PDF visual rendering, browsers or Docker were exercised for version 4. Do not treat 100% unit coverage as proof of those properties or deployment readiness. Live/native qualification remains outside the authorized test scope and is not a required release step in this task.

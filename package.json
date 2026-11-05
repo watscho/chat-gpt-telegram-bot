@@ -1,8 +1,8 @@
 {
   "name": "chat-gpt-telegram-bot",
-  "version": "3.0.1",
+  "version": "4.0.0",
   "private": true,
-  "description": "A private TypeScript Telegram assistant with web search, documents, image workflows, durable conversations, managed memory and voice replies.",
+  "description": "A private TypeScript Telegram assistant with projects, streaming, usage controls, documents, image workflows, durable jobs and timezone-aware schedules.",
   "type": "module",
   "main": "dist/index.js",
   "license": "MIT",
@@ -28,17 +28,20 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "node --import tsx --test 'src/**/__tests__/*.test.ts'",
-    "test:coverage": "node --import tsx --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 --test-coverage-include='src/**/*.ts' --test-coverage-exclude='src/**/__tests__/**' --test 'src/**/__tests__/*.test.ts'",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build"
+    "test": "node --experimental-test-module-mocks --import tsx --test 'src/**/__tests__/*.test.ts'",
+    "test:coverage": "node --experimental-test-module-mocks --import tsx --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 --test-coverage-include='src/**/*.ts' --test-coverage-exclude='src/**/__tests__/**' --test 'src/**/__tests__/*.test.ts'",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build",
+    "test:unit": "node --experimental-test-module-mocks --import tsx --test 'src/**/__tests__/*.test.ts'"
   },
   "dependencies": {
     "openai": "7.50.0",
+    "pdfkit": "0.20.2",
     "telegraf": "4.16.3"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "26.6.6",
+    "@types/pdfkit": "0.17.7",
     "eslint": "10.14.0",
     "eslint-config-prettier": "10.1.8",
     "globals": "17.14.0",

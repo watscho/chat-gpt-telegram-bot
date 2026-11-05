@@ -49,6 +49,40 @@ Model identifiers are configurable strings. Startup validation checks configurat
 
 The historical `*_IMAGE_BYTES` history variable names are retained for compatibility and now cover **all attachments**. Base64 expands binary payloads by about one third. Budgets bound encoded payloads, not total RSS, network buffers or SQLite file size. Providers can impose additional request limits; raising local budgets does not raise provider limits.
 
-`/image` and `/edit` force the image tool with one call. Automatic requests offer both image generation and web search, and share `MAX_WEB_SEARCH_CALLS`; the model is instructed to generate at most one image. `/search` offers only web search and requires a tool call. The budget is not a daily spending cap. Each generated image is checked before delivery; a large completed turn may be delivered and then discarded from history to satisfy retention limits.
+`/image` and `/edit` force the image tool with one call. Automatic requests offer both image generation and web search, and share `MAX_WEB_SEARCH_CALLS`; the model is instructed to generate at most one image. `/search` offers only web search and requires a tool call. This per-request tool budget is separate from the UTC daily usage quotas below. Each generated image is checked before delivery; a large completed turn may be delivered and then discarded from history to satisfy retention limits.
 
 Lowering history budgets removes oversized retained histories on startup and evicts older histories until global limits hold. Changing note/thread limits governs subsequent additions; existing saved notes and named slots remain until explicitly edited or deleted. Limits do not count tokens inside files before the provider parses them.
+
+## Pro usage, streaming and durable work
+
+`STREAM_RESPONSES` defaults to `true`; accepted values are exactly `true` or `false`. Streaming edits a Telegram preview at most once per second. Setting it to `false` keeps final-answer delivery and cancellation controls.
+
+| Setting                            |  Default |    Maximum | Scope                                                                         |
+| ---------------------------------- | -------: | ---------: | ----------------------------------------------------------------------------- |
+| `DAILY_BUDGET_MICRO_USD`           | 10000000 | 1000000000 | Estimated daily spend per owner; 1000000 micro-USD = $1                       |
+| `DAILY_REQUESTS`                   |      100 |      10000 | Paid operations: Responses, transcription and narration each count separately |
+| `DAILY_IMAGES`                     |       20 |       1000 | Image tool calls per owner/UTC day                                            |
+| `DAILY_SEARCHES`                   |      100 |      10000 | Web tool calls per owner/UTC day                                              |
+| `DAILY_VOICE`                      |       50 |       1000 | Outgoing narration operations per owner/UTC day                               |
+| `ESTIMATE_CHAT_MICRO_USD`          |   100000 |   10000000 | Base reservation per Responses operation                                      |
+| `ESTIMATE_IMAGE_MICRO_USD`         |   500000 |   10000000 | Additional reservation per image tool call                                    |
+| `ESTIMATE_SEARCH_MICRO_USD`        |    10000 |   10000000 | Additional reservation per search tool call                                   |
+| `ESTIMATE_VOICE_MICRO_USD`         |   100000 |   10000000 | Reservation per narration operation                                           |
+| `ESTIMATE_TRANSCRIPTION_MICRO_USD` |   100000 |   10000000 | Reservation per incoming transcription                                        |
+| `MAX_PROJECTS`                     |       10 |        100 | Projects per owner                                                            |
+| `MAX_PROJECT_BYTES`                | 20000000 |   64000000 | Aggregate encoded document data across all projects per owner                 |
+| `MAX_JOBS`                         |       20 |        100 | Retained job records per owner, including completed/cancelled records         |
+| `MAX_JOB_BYTES`                    | 20000000 |   64000000 | Serialized queue payload budget checked before adding work                    |
+| `MAX_SCHEDULES`                    |       20 |        100 | Schedules per owner                                                           |
+| `MAX_EXPORT_BYTES`                 | 20000000 |   64000000 | Each generated Markdown/JSON/PDF export                                       |
+| `WORKER_INTERVAL_MS`               |     1000 |      60000 | Background worker polling interval                                            |
+
+All numeric environment settings must be positive integers. Users can set `/budget 0` or `/limits image|search|voice 0` to disable paid work or a feature locally; these user settings can rise only as far as the operator maximum. `/budget` accepts USD with up to six fractional digits. Usage resets logically at the UTC day boundary; schedule timezone changes cannot reset it. Old persisted usage aggregates are overwritten on the next reservation rather than erased by a midnight task.
+
+Estimates are fixed configurable amounts, **not measured token costs or current provider prices**. A Responses call reserves its base plus possible tools; successful completion releases unused image/search reservations. Automatic tools shrink or disable when remaining allowance is insufficient; explicit unavailable image/search work rejects before the provider call. Failures/cancellation keep reservations because a charge may already have occurred. Outgoing speech and incoming transcription reserve separately. Background paid jobs obey the same ledger; reminder delivery uses no model call. Set independent provider-side budgets and monitor actual billing.
+
+Per-conversation overrides: mode (`default`, `developer`, `editor`, `translator`, `custom`), custom instructions (up to 4000 characters), image quality/size from the model table, history retention (60..86400 seconds or operator default), and selected project/image version. Explicit project instructions use the same 4000-character bound. Each project retains at most ten documents; same-name attachment replaces the existing file. Project notes obey configured note count/character limits. Projects and jobs do not inherit conversation TTL.
+
+`MAX_JOB_BYTES` is an admission bound, not a hard database/RSS limit: later generated results and schedule metadata can increase the stored queue size. Results remain bounded by provider output/media limits; adding further work fails when the resulting queue is too large. Remove old jobs explicitly. Export size checks may reject a full `/data` archive containing large attachments; remove unnecessary retained content or export a conversation separately.
+
+Changing limits does not rewrite all existing workspace/job data. Use explicit deletion commands to reclaim it. Run a single polling process: counters, caches and locks are not distributed. See [operations](operations.md) for schema migration and recovery.

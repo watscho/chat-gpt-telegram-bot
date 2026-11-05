@@ -1,8 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { SQLiteStateStore } from '../../infrastructure/state-store.js'
 import { Conversations } from '../conversations.js'
-import { config, FakeModel } from '../../__tests__/helpers.js'
+import { config, FakeModel, MemoryStateStore } from '../../__tests__/helpers.js'
 
 void test('users have isolated histories and reset affects only one user', async () => {
   const model = new FakeModel()
@@ -89,7 +88,7 @@ void test('an oversized completed answer is delivered but its entire turn is dis
 })
 
 void test('text, files and generated image history survive restart, expire and clear durably', async () => {
-  const store = new SQLiteStateStore(':memory:')
+  const store = new MemoryStateStore()
   const model = new FakeModel()
   let now = 1
   let conversations = new Conversations(
@@ -128,7 +127,7 @@ void test('text, files and generated image history survive restart, expire and c
 })
 
 void test('restart reapplies lowered budgets; persistent capacity evictions remove old sessions', async () => {
-  const store = new SQLiteStateStore(':memory:')
+  const store = new MemoryStateStore()
   const model = new FakeModel()
   const chat = new Conversations(model, config(), Date.now, store)
   await chat.reply('a', 'first')
@@ -169,7 +168,7 @@ void test('restart reapplies lowered budgets; persistent capacity evictions remo
 })
 
 void test('failed durable commit preserves prior in-memory history', async () => {
-  const store = new SQLiteStateStore(':memory:')
+  const store = new MemoryStateStore()
   const model = new FakeModel()
   const chat = new Conversations(model, config(), Date.now, store)
   await chat.reply('a', 'first')
@@ -244,4 +243,100 @@ void test('generated images remain available for subsequent edits without assist
   model.answer = 'done'
   await chat.respond('a', 'add a hat', [], { action: 'edit' })
   assert.deepEqual(model.calls.at(-1)?.[1]?.images, [image])
+})
+
+void test('cancelled requests never start or commit a late provider answer; local validation precedes billing hooks', async () => {
+  const model = new FakeModel()
+  const chat = new Conversations(model, config())
+  const stopped = new AbortController()
+  stopped.abort()
+  await assert.rejects(
+    chat.respond('a:1', 'hello', [], { signal: stopped.signal }),
+    /stopped/
+  )
+  assert.equal(model.calls.length, 0)
+  let charged = 0
+  await assert.rejects(
+    chat.respond('a:1', '', [], {
+      onStart: () => {
+        charged++
+      }
+    })
+  )
+  assert.equal(charged, 0)
+  const controller = new AbortController()
+  model.reply = () => {
+    controller.abort()
+    return Promise.resolve('late response')
+  }
+  await assert.rejects(
+    chat.respond('a:1', 'hello', [], { signal: controller.signal }),
+    /stopped/
+  )
+  assert.equal(chat.history('a:1').length, 0)
+})
+void test('owned history search, legacy image versions and retention are bounded and scoped', async () => {
+  const store = new MemoryStateStore()
+  store.putSession('a:1', {
+    messages: [
+      { role: 'user', content: 'Question' },
+      {
+        role: 'assistant',
+        content: 'DECISION: use TypeScript',
+        images: [image]
+      }
+    ],
+    expiresAt: 100000
+  })
+  store.putSession('b:1', {
+    messages: [{ role: 'user', content: 'Private decision' }],
+    expiresAt: 100000
+  })
+  const chat = new Conversations(new FakeModel(), config(), () => 0, store)
+  assert.equal(chat.search('a', 'decision').length, 1)
+  assert.equal(chat.search('a', 'private').length, 0)
+  assert.throws(() => chat.search('a', ''), /between/)
+  assert.throws(() => chat.search('a', 'a'.repeat(121)))
+  assert.match(chat.versions('a:1')[0]!.id, /^legacy-[0-9a-f]{16}\.0$/)
+  chat.retention('a:1', 60)
+  assert.equal(
+    store.sessions().find(([key]) => key === 'a:1')?.[1].expiresAt,
+    60000
+  )
+  chat.retention('missing', 60)
+  const local = new Conversations(new FakeModel(), config())
+  await local.respond('a:1', 'hello', [], {
+    retentionSeconds: 120,
+    onStart: () => {}
+  })
+  local.retention('a:1', 60)
+  chat.forgetOwner('a')
+  assert.equal(chat.owned('a').length, 0)
+  assert.equal(chat.owned('b').length, 1)
+})
+
+void test('legacy image source IDs remain stable when earlier history turns are trimmed', async () => {
+  const store = new MemoryStateStore()
+  store.putSession('a:1', {
+    messages: [
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: '', images: [image] },
+      { role: 'user', content: 'second' },
+      {
+        role: 'assistant',
+        content: '',
+        images: [{ ...image, data: 'iVBORw0KGgoA' }]
+      }
+    ],
+    expiresAt: 100000
+  })
+  const chat = new Conversations(
+    new FakeModel(),
+    { ...config(), maxHistoryTurns: 2 },
+    () => 0,
+    store
+  )
+  const selected = chat.versions('a:1')[1]!.id
+  await chat.reply('a:1', 'next')
+  assert.equal(chat.versions('a:1')[0]?.id, selected)
 })

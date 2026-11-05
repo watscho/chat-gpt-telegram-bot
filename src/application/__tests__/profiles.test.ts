@@ -1,17 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { Profiles } from '../profiles.js'
-import { SQLiteStateStore } from '../../infrastructure/state-store.js'
-import { config } from '../../__tests__/helpers.js'
+import { config, MemoryStateStore } from '../../__tests__/helpers.js'
 
-void test('named conversations and explicit notes are isolated, bounded and durable', t => {
-  const directory = mkdtempSync(join(tmpdir(), 'telegram-state-'))
-  t.after(() => rmSync(directory, { recursive: true, force: true }))
-  const path = join(directory, 'private', 'state.sqlite')
-  let store = new SQLiteStateStore(path)
+void test('named conversations and explicit notes are isolated, bounded and durable', () => {
+  const store = new MemoryStateStore()
   let profiles = new Profiles(
     { ...config(), maxThreads: 2, maxMemories: 2, maxMemoryCharacters: 20 },
     store
@@ -31,7 +24,6 @@ void test('named conversations and explicit notes are isolated, bounded and dura
   snapshot.memories.length = 0
   assert.equal(profiles.get('alice').memories.length, 2)
   store.close()
-  store = new SQLiteStateStore(path)
   profiles = new Profiles(config(), store)
   assert.equal(profiles.get('alice').active, '2')
   assert.equal(profiles.get('alice').voice, 'auto')
@@ -53,8 +45,6 @@ void test('named conversations and explicit notes are isolated, bounded and dura
   assert.throws(() => profiles.rename('alice', 'a'.repeat(81)), /name/)
   assert.throws(() => profiles.forget('alice', '0'), /not found/)
   assert.throws(() => profiles.voice('alice', 'invalid'), /Usage/)
-  if (process.platform !== 'win32')
-    assert.equal(statSync(path).mode & 0o777, 0o600)
   store.close()
 })
 

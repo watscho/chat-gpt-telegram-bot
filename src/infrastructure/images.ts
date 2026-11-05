@@ -35,10 +35,18 @@ export async function downloadTelegramImage(
   url: URL,
   maxBytes: number,
   timeoutMs: number,
-  fetcher: typeof fetch = fetch
+  fetcher: typeof fetch = fetch,
+  signal?: AbortSignal
 ): Promise<Image> {
   return imageFromBytes(
-    await downloadTelegramFile(url, maxBytes, timeoutMs, fetcher, 'Image'),
+    await downloadTelegramFile(
+      url,
+      maxBytes,
+      timeoutMs,
+      fetcher,
+      'Image',
+      signal
+    ),
     maxBytes
   )
 }

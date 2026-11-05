@@ -1,53 +1,53 @@
-# Architecture and test conventions
+# Architecture and unit-test conventions
 
 ## Boundaries
 
-```text
-src/
-  index.ts                      composition, polling and shutdown
-  config.ts                     validated environment settings
-  domain/
-    conversation.ts             messages, media, sources and model port
-    state.ts                    profiles, sessions and persistence port
-    speech.ts                   narration port
-  application/
-    conversations.ts            history/TTL/budgets and complete-turn commits
-    profiles.ts                 conversation selection, explicit notes, voice preferences
-    sources.ts                  safe source deduplication and citation rendering
-  infrastructure/
-    openai-model.ts             Responses, files, web/image tools and transcription
-    realtime-speech.ts          bounded Realtime audio collection
-    voice-encoder.ts            fixed-argument PCM -> OGG/Opus pipe
-    state-store.ts              SQLite schema and transactional replacement/eviction
-    telegram-file.ts            bounded HTTPS downloads from Telegram only
-    telegram-audio.ts           voice-specific downloader adapter
-    images.ts                   image signatures, types and size checks
-    documents.ts                document format/signature/UTF-8 checks
-  telegram/
-    bot.ts                      access, concurrency, album collection, commands and delivery
-```
+| Layer                                                | Responsibilities                                                                                                                            |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/domain`                                         | Conversation/media/provider ports, profiles/persistence, workspace/usage and job/schedule types                                             |
+| `src/application/conversations.ts`                   | Complete-turn commits, bounded history, TTL, search, retained image versions and owner-scoped deletion                                      |
+| `src/application/profiles.ts`                        | Named conversations, selection, explicit global notes and voice preferences                                                                 |
+| `src/application/workspaces.ts`                      | Projects, per-thread modes/instructions/image settings/retention and lower user limits                                                      |
+| `src/application/usage.ts`                           | UTC ledger, atomic local reservations, tool reconciliation and conservative failed-attempt accounting                                       |
+| `src/application/response-controls.ts`               | Abort controllers, answer tokens, owner/thread/revision-bound buttons                                                                       |
+| `src/application/jobs.ts`                            | Durable queue, schedule materialization, worker locks, cancellation, restart recovery and delivery retries                                  |
+| `src/application/scheduling.ts`                      | Intervals and IANA timezone conversion with DST ambiguity/gap rejection                                                                     |
+| `src/application/sources.ts`                         | Safe source deduplication and citation rendering                                                                                            |
+| `src/infrastructure`                                 | Responses/transcription, Realtime speech, FFmpeg encoding, bounded Telegram downloads, file validation, SQLite and Markdown/JSON/PDF export |
+| `src/telegram/bot.ts`                                | Access control, foreground/background locking, albums, streaming, callbacks and delivery                                                    |
+| `src/telegram/pro-commands.ts`                       | Local workspace/data/usage/job commands and comparison prompt construction                                                                  |
+| `src/index.ts`, `src/infrastructure/dependencies.ts` | Production composition, polling, worker timer and bounded shutdown; replaceable constructor references for unit tests                       |
 
-Each source directory contains its own `__tests__` directory. `src/__tests__/helpers.ts` contains shared fake models/config; `src/__tests__/fixtures` contains process-only fake Telegram transport. Keep new tests adjacent to the source they exercise. Do not put application test files in a separate root `tests/` tree.
-
-Domain and application code do not import Telegram/OpenAI SDK types. Provider and downloader behavior is injected at the bot boundary; speech transport and encoder can be injected independently. Importing application modules neither reads credentials nor starts polling. Only the entrypoint constructs the production database, provider clients and polling process.
+Domain/application code does not import Telegram/OpenAI SDK types. Provider, store, clock and transport boundaries are replaceable. Importing application modules starts no network or database activity. The entrypoint constructs the actual SQLite connection and provider clients.
 
 ## Request lifecycle
 
-1. Reject non-private or unlisted users before provider/file access.
-2. Hold one user/chat lock across conversation switches, commands and requests; apply a global handler cap. Album updates share a bounded collection window under the same lock.
-3. Execute explicit conversation/memory/voice commands locally. Ordinary messages cannot silently create saved notes.
-4. Validate and download attachments through HTTPS Telegram-origin checks, redirect rejection, streaming byte caps and a shared batch deadline.
-5. Select the user's active conversation, prune expired/old history, attach explicitly selected files and supply saved notes as user-level preferences.
-6. Call Responses with `store: false`. Search/image tool budgets and output tokens are bounded. Parse safe source annotations and validated images.
-7. Commit complete turns and capacity evictions to SQLite before replacing in-memory state. Source lists stay in history for follow-up provenance. Generated images are reattached as labelled reference inputs for stateless subsequent edits.
-8. Deliver plain-text Unicode-safe chunks, numbered sources and original PNG files. Optionally narrate a bounded answer. Narration failure preserves text and history.
+1. Reject non-private or unlisted users before provider/file access. Serialize foreground work per owner and apply a global active-handler cap. Allow cancellation through the busy gate.
+2. Execute local commands without a model call. Albums share a bounded 750 ms collection window and download deadline. Validate formats, HTTPS Telegram origin, no redirects, stream byte caps and cancellation.
+3. Resolve the selected conversation/project, prune expired history, compose mode/custom/project instructions, and supply explicit global/project notes as user-level preferences. Selected retained image versions supply edit references.
+4. Validate the complete input before invoking `onStart`. Reserve UTC usage and estimated spend immediately before each paid operation. Automatic tools are disabled when no allowance remains; explicit unavailable tools reject locally.
+5. Call Responses with `store: false`, AbortSignal and bounded output/tools. Stream throttled preview edits when enabled. Only a completed, non-cancelled response is eligible for history commit.
+6. Commit a complete turn with capacity evictions before replacing cached history. Assign message UUIDs; legacy images use stable content-derived IDs. Reconcile unused tool reservations on successful completion; retain reservations on failure/cancellation.
+7. Deliver Unicode-safe text chunks, citations and original PNG files. Bind answer controls to owner, thread, token and last assistant revision so background updates invalidate old actions. Optional narration has its own quota reservation; failure preserves text.
 
-Speech uses one short-lived Realtime connection per request, gathers 24 kHz mono PCM from audio delta events, rejects failed/incomplete/oversized responses, closes the connection, then pipes PCM to FFmpeg/libopus within the remaining deadline. Neither audio stage needs temporary files. FFmpeg receives fixed arguments and no shell command or user-controlled URLs.
+Speech gathers bounded 24 kHz mono PCM over a short-lived Realtime connection, then pipes it to FFmpeg/libopus within the remaining deadline. Cancellation closes the connection and aborts encoding. FFmpeg uses fixed arguments without a shell or temporary audio files.
 
-## Test and coverage policy
+## Durable work and persistence
 
-`npm test` discovers `src/**/__tests__/*.test.ts`. `npm run test:coverage` enforces **100% line, branch and function coverage** across executable `src/**/*.ts`. Only `src/**/__tests__/**` is excluded from measurement. Do not add coverage-ignore annotations or lower thresholds to make a change pass. Interfaces have no runtime instructions to measure.
+SQLite schema 2 stores profiles, sessions and scoped JSON records (`workspace`, `usage`, `queue`). Owner keys are private chat/user pairs; session keys append a conversation ID. Prefix deletion uses exact owner boundaries. Session replacement and evictions are transactional. Workspace/queue caches publish only after successful persistence. This is single-process coordination, not a distributed queue.
 
-Use behavior assertions for isolation, state transitions, failure recovery, limits and provider contracts. The suite includes focused units plus offline integration tests for the actual SDK, Telegraf pipeline, SQLite, process lifecycle and FFmpeg. Network access and real credentials are unnecessary. Lifecycle tests run child processes with a test-only Telegram transport; shortened timers in that fixture exercise the real shutdown-deadline branch without waiting ten seconds.
+The worker runs one background job at a time and locks its target conversation. Foreground work elsewhere may proceed within the shared cap. Jobs snapshot reference files/instructions and origin project ID; explicit notes are resolved at execution. Schedules capture references when an occurrence becomes a job. No-context summaries fail before paid work.
 
-Production compilation excludes every `__tests__` directory. CI runs the coverage gate separately from the standard checks and builds the same production output used by Docker. Coverage proves exercised control flow, not correctness of external model answers or availability of a user's account.
+Restart recovery marks interrupted paid attempts `uncertain`, without automatic paid retry. Interrupted reminders return to `queued`. Results and Telegram delivery state are separate: up to three delivery attempts, 60 seconds apart, never rerun the model. Delivery can duplicate after a crash between Telegram acceptance and local acknowledgement. Manual `/result` resends the retained result without generating it again.
+
+Idle ticks do not rewrite unchanged queue records or repeatedly rescan persistent owners. Missed recurring occurrences coalesce into one pending occurrence; the next due time advances from the current clock. Completed/cancelled records consume queue slots until explicitly deleted. Conversation TTL does not erase projects or queued/results payloads.
+
+## Unit-test and coverage policy
+
+`npm test` and `npm run test:unit` discover `src/**/__tests__/*.test.ts`. Shared doubles live in `src/__tests__/helpers.ts`. Keep tests beside their source; do not create a root `tests/` tree. Production compilation excludes all `__tests__` directories.
+
+Only unit tests are permitted. Use fake clocks, in-memory stores, fake Telegram/HTTP/WebSocket transports and controlled process/renderer doubles. SQLite constructors and filesystem calls are replaced; no real databases/files are opened by persistence tests. FFmpeg spawn events, lifecycle signals/exits and PDFKit output are mocked. Do not add real APIs, native encoding, application subprocesses, browser, Docker, integration, performance or soak tests.
+
+`npm run test:coverage` requires **100% lines, branches and functions** across executable `src/**/*.ts`, excluding only `src/**/__tests__/**`. Do not lower thresholds, exclude production code or add coverage-ignore annotations. Assert behavior: ownership, failure/recovery, cancellation, limits, state transitions and transport contracts. Prefer constructor/property injection over mocking application modules, which can distort aggregated V8 source coverage.
+
+The test scripts enable Node's experimental module mocks. CI runs static type/lint/format checks, unit tests, compilation, coverage and a dependency advisory query. It does not build Docker or install/run FFmpeg. Coverage does not establish native durability, real PDF typography, provider compatibility, model answer quality or deployment readiness.
