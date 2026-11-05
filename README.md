@@ -54,7 +54,7 @@ npm start
 
 Voice replies start **off**. Every outgoing voice message is labelled **AI-generated voice**. Text answers remain available even if narration fails. Long answers are not silently truncated for speech: use `/speak` with a shorter passage.
 
-Natural-language requests can invoke image generation or web search automatically. Explicit commands provide a predictable way to request them. `запомни: …`, `remember …`, `забудь …` and `forget …` manage saved notes without a model call. The bot never extracts long-term notes automatically from ordinary conversation.
+Natural-language requests can invoke image generation or web search automatically. Explicit commands provide a predictable way to request them. `remember: …` and `forget …` manage saved notes without a model call. The bot never extracts long-term notes automatically from ordinary conversation.
 
 ## Photos and documents
 
@@ -67,14 +67,14 @@ Reference albums collect up to ten updates during a 750 ms window and share one 
 Examples:
 
 ```text
-[photo] Read this sign and translate it into Russian.
+[photo] Read this sign and translate it into English.
 /image A realistic cat portrait in a spacesuit, square composition
 [reply to that image] /edit Replace the background with a beach
 [PDF] Summarize the obligations and point to the relevant pages.
 [follow-up] What does section 4 say?
 /search What changed in the latest Node.js release?
 /new Work
-/remember Answer concisely in Russian.
+/remember Answer concisely in English.
 /voice auto
 ```
 
@@ -104,7 +104,7 @@ CI installs FFmpeg, runs checks and the 100% coverage gate, audits dependencies 
 
 ## Documentation
 
-- [Руководство пользователя на русском](docs/USER_GUIDE.ru.md)
+- [User guide](docs/USER_GUIDE.md)
 - [Configuration reference](docs/configuration.md)
 - [Operations, Docker, backups and live verification](docs/operations.md)
 - [Architecture and test conventions](docs/architecture.md)

@@ -183,7 +183,7 @@ void test('SDK forces web search and preserves numbered citation metadata', asyn
       {
         role: 'user',
         content:
-          'Saved user notes (user-provided preferences): ["Answer in Russian"]'
+          'Saved user notes (user-provided preferences): ["Answer in English"]'
       },
       { role: 'user', content: 'Latest release?' }
     ])
@@ -224,7 +224,7 @@ void test('SDK forces web search and preserves numbered citation metadata', asyn
   assert.deepEqual(
     await model.reply([{ role: 'user', content: 'Latest release?' }], {
       search: true,
-      memories: ['Answer in Russian']
+      memories: ['Answer in English']
     }),
     {
       text: 'New release. [1]',

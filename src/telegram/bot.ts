@@ -105,7 +105,7 @@ export function createBot({
     '/image description — generate; /edit instructions — edit images in context. Results arrive as original PNG files.',
     '/new [name] — create and switch conversation; /chats — list; /switch id; /rename name; /delete id.',
     '/reset — clear current history and attachments. /start displays help.',
-    '/remember note (or “запомни: …”) — save a user note across conversations; /memory — view; /forget number | all (or exact note). Nothing is remembered automatically.',
+    '/remember note (or “remember: …”) — save a user note across conversations; /memory — view; /forget number | all (or exact note). Nothing is remembered automatically.',
     '/voice off | on | auto — voice replies (auto: only after voice input); /speak [text] — narrate text or the last answer. Voice is AI-generated. Text is always available.',
     'With the production store, history, photos and documents persist locally until TTL/eviction/reset; named conversations, saved notes and voice preferences persist until changed/deleted. Text, audio, files, notes and relevant history are sent to OpenAI. Search queries also reach search providers. API usage is billed.'
   ].join('\n\n')
@@ -131,11 +131,9 @@ export function createBot({
   }
   const manage = async (ctx: Context, text: string): Promise<boolean> => {
     const naturalRemember = text.match(
-      /^(?:запомни|remember)(?:\s*[:：]\s*|\s+)([\s\S]+)$/i
+      /^remember(?:\s*[:：]\s*|\s+)([\s\S]+)$/i
     )
-    const naturalForget = text.match(
-      /^(?:забудь|forget)(?:\s*[:：]\s*|\s+)([\s\S]+)$/i
-    )
+    const naturalForget = text.match(/^forget(?:\s*[:：]\s*|\s+)([\s\S]+)$/i)
     const match = text.match(/^\/(\w+)(?:@\w+)?(?:\s+|$)/)
     const command = naturalRemember
       ? 'remember'
@@ -206,10 +204,7 @@ export function createBot({
         break
       }
       case 'forget':
-        profiles.forget(
-          owner,
-          /^(?:всё|все)$/i.test(argument) ? 'all' : argument
-        )
+        profiles.forget(owner, argument)
         await ctx.reply(
           'Saved memory removed. Previous conversation content is unchanged; /reset clears it.'
         )

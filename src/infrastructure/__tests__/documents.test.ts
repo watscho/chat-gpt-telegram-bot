@@ -22,7 +22,7 @@ void test('supported documents use bounded inline payloads; binary signatures an
   }
   for (const extension of ['txt', 'md', 'csv', 'json'])
     assert.ok(
-      documentFromBytes(Buffer.from('Привет'), `test.${extension}`, 100).data
+      documentFromBytes(Buffer.from('Hello 🌍'), `test.${extension}`, 100).data
     )
   for (const [data, name, max] of [
     [Buffer.alloc(0), 'empty.txt', 100],

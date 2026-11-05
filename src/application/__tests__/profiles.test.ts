@@ -19,8 +19,8 @@ void test('named conversations and explicit notes are isolated, bounded and dura
   assert.equal(profiles.get('alice').active, '1')
   profiles.create('alice', 'Work')
   profiles.rename('alice', 'Research')
-  profiles.remember('alice', 'Russian')
-  profiles.remember('alice', 'Russian') // duplicate does not consume a slot
+  profiles.remember('alice', 'English')
+  profiles.remember('alice', 'English') // duplicate does not consume a slot
   profiles.remember('alice', 'TypeScript')
   profiles.voice('alice', 'auto')
   assert.throws(() => profiles.create('alice', 'Third'), /limit/)

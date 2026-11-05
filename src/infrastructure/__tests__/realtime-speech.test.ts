@@ -57,7 +57,7 @@ void test('Realtime narrates a bounded text input and closes its connection befo
     events.emit('response.output_audio.delta', { delta: 'late' })
   })
   assert.equal(
-    Buffer.from(await app.speech.synthesize('Привет')).toString(),
+    Buffer.from(await app.speech.synthesize('Hello 🌍')).toString(),
     'OggSvoice'
   )
   assert.equal(app.closed(), 1)
@@ -80,7 +80,7 @@ void test('Realtime narrates a bounded text input and closes its connection befo
     {
       type: 'message',
       role: 'user',
-      content: [{ type: 'input_text', text: 'Привет' }]
+      content: [{ type: 'input_text', text: 'Hello 🌍' }]
     }
   ])
 })
