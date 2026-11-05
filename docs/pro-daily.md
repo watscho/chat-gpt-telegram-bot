@@ -1,6 +1,6 @@
 # Daily workflows: guide and release acceptance
 
-Current release: **10.0.1**.
+Current release: **11.0.0**.
 
 These daily workflows were introduced in version 7.0.0. Open `/start` for the short entry flow or `/guide daily` for navigation. These workflows reuse private-chat allowlisting, owner/thread binding, existing budgets, cancellation, context review and history limits.
 

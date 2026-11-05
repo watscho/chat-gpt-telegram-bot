@@ -1,3 +1,4 @@
+import type { RoutineSpec } from './routine.js'
 import type { WorkflowSpec } from './suite.js'
 import type { Document, Image, ModelReply } from './conversation.js'
 import type { JobInput } from './jobs.js'
@@ -15,6 +16,7 @@ export interface InboxItem {
   createdAt: number
 }
 export interface MissionStep {
+  routine?: RoutineSpec
   workflow?: WorkflowSpec
   kind: 'compose' | 'search' | 'analysis' | 'connection' | 'media' | 'local'
   title: string

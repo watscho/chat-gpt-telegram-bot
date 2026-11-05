@@ -1,6 +1,6 @@
 # Configuration reference
 
-Current release: **10.0.1**.
+Current release: **11.0.0**.
 
 Copy `.env.example` to `.env` for local development, or inject environment variables in production. Never commit credentials, state databases or user content. Invalid numeric and enum values fail at startup; error messages name settings without their values. Numeric values must be positive integers within the maxima below.
 

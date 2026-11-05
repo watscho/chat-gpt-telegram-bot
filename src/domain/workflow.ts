@@ -21,6 +21,7 @@ export interface Approval {
   estimate: number
 }
 export interface WorkflowState {
+  routineReceipts?: { token: string; base: string }[]
   tasks: Task[]
   glossary: Record<string, { term: string; meaning: string }[]>
   quotes: { message: number; thread: string; revision: string; text: string }[]

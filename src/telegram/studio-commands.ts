@@ -50,7 +50,7 @@ export class StudioCommands {
     )
     for (const [index, step] of mission.steps.entries()) {
       await ctx.text(
-        `${index + 1}. ${step.title} · ${step.state} · attempt ${step.attempt}\n${step.prompt}\n${step.workflow ? `Workflow: ${step.workflow.id} · ${step.workflow.phase} · model ${step.workflow.model ?? 'local'}\nParameters: ${JSON.stringify(step.workflow.params)}\n` : ''}${step.receipt?.text ?? 'Not attempted.'}\n${step.events.map(event => `${event.state}: ${event.text}`).join('\n')}`
+        `${index + 1}. ${step.title} · ${step.state} · attempt ${step.attempt}\n${step.prompt}\n${step.routine ? `Daily workflow: ${step.routine.kind} · ${step.routine.phase} · model ${step.routine.model ?? 'local'}\nParameters: ${JSON.stringify(step.routine.params)}\n` : ''}${step.workflow ? `Workflow: ${step.workflow.id} · ${step.workflow.phase} · model ${step.workflow.model ?? 'local'}\nParameters: ${JSON.stringify(step.workflow.params)}\n` : ''}${step.receipt?.text ?? 'Not attempted.'}\n${step.events.map(event => `${event.state}: ${event.text}`).join('\n')}`
       )
       if (step.approval)
         await ctx.text(
@@ -323,7 +323,8 @@ export class StudioCommands {
                   title: step.title,
                   prompt: step.prompt,
                   estimate: step.estimate,
-                  workflow: step.workflow
+                  workflow: step.workflow,
+                  routine: step.routine
                 }))
               },
               null,

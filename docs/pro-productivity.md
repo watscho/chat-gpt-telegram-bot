@@ -1,6 +1,6 @@
 # Pro productivity release: scope and acceptance
 
-Current release: **10.0.1**.
+Current release: **11.0.0**.
 
 These seven productivity workflows were introduced in version 4.1.0 and are maintained for the current release. All automated verification is unit-only; coverage does not establish live provider behavior, native PDF extraction quality or deployment readiness.
 

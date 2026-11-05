@@ -1,6 +1,6 @@
 # Pro roadmap and acceptance contract
 
-Current release: **10.0.1**.
+Current release: **11.0.0**.
 
 Status: implemented and verified with unit/static checks. This document preserves the original ten-feature scope from version 4.0.0; the current [complete feature catalog](../README.md#complete-feature-catalog) also covers later Studio and Suite capabilities. Completed unit coverage is not live provider or deployment qualification.
 

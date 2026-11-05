@@ -1,6 +1,6 @@
 # Architecture and unit-test conventions
 
-Current release: **10.0.1**.
+Current release: **11.0.0**.
 
 ## Boundaries
 
@@ -113,3 +113,9 @@ The `studio` scoped JSON record contains Inbox items, captured inputs, missions,
 `WorkSearch` recomputes owner-only lexical excerpts; `Watches` persists baselines/diffs and claims notification before transport. `SharedProjects` uses independent global records with fresh member-role/revision checks on every operation; private workspaces are never implicit shared resources. `SuiteWorkspace` exposes redacted authenticated snapshots/local controls; Telegram owns grants, publication and paid-plan reviews.
 
 Artifact ports compose bounded native ZIP APIs, DOCX/PPTX/PDF adapters, preserved-pixel SVG annotations and fixed-argument private-temp video extraction. Unit tests replace external libraries/process/FS/transport ports; no native rendering/decompression/provider/browser acceptance is inferred. See [the acceptance matrix and lifecycle](pro-suite.md).
+
+## Daily routine boundaries
+
+`Routines` reads fresh owner `routines` state, validates record/byte limits and persists before publication. Calendar/finance/learning/waiting/reading services implement deterministic local state changes. `RoutinePlans` freezes only explicit selected sources/materials and the conversation model into inert Studio missions. `RoutineExecutor` wraps Suite execution, uses typed model stages and local validation, and prepares expiring owner/conversation/project-bound previews; `RoutineReviews` dispatches separate acceptance. The signed `RoutineHome` adapter shares the same services with Telegram commands and renders through text-only DOM controls.
+
+Calendar evidence has a 15-minute maximum age. Financial arithmetic uses minor-unit strings/BigInt with currency-specific precision. Evening task effects and a recovery receipt are stored together in Workflow before the separate day-close commit. Reading shares pinned public HTTPS transport with articles and validates bounded XML in pure JavaScript. Revision/abort guards prevent late source commits; reminder claims precede transport and uncertain delivery has no automatic retry. Exports include routines, imports do not activate source routine state, and owner erase aborts reading before deletion. See [daily routine lifecycle and limits](pro-routines.md#state-limits-and-operations).

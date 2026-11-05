@@ -3328,3 +3328,122 @@ void test('Suite video transcription uses the meeting WAV port and preserves the
   assert.match(JSON.stringify(call.value), /video-clip.wav/)
   app.bot.stopJobs()
 })
+void test('daily Telegram wiring uses explicit current/replied materials, signed home, allowlisted workers and shared source-scope validation', async () => {
+  const { routineSetup } = await import('../../__tests__/routines.js'),
+    helper = routineSetup(),
+    store = helper.store,
+    settings = helper.settings
+  const app = setup(undefined, 10, undefined, store, {
+    config: settings,
+    readReading: () =>
+      Promise.resolve([
+        {
+          url: 'https://example.com/item',
+          title: 'Reading',
+          excerpt: 'Selected source',
+          published: null
+        }
+      ])
+  })
+  await app.bot.handleUpdate(update('/home'))
+  assert.match(app.replies.at(-1)!, /My day/)
+  await app.bot.handleUpdate(callback('routine:home:expense'))
+  assert.ok(app.callbacks.length)
+  await app.bot.handleUpdate(photoUpdate('/expense scan'))
+  assert.equal(studioMission(store).input.images.length, 1)
+  await app.bot.handleUpdate(documentUpdate('receipt.pdf', '/expense scan'))
+  assert.equal(studioMission(store, 1).input.documents.length, 1)
+  const replied = update('/expense scan')
+  if ('message' in replied)
+    Object.assign(replied.message, {
+      reply_to_message: {
+        message_id: 10,
+        date: 1,
+        chat: { id: 42, type: 'private' },
+        photo: [
+          { file_id: 'photo', file_unique_id: 'p', width: 10, height: 10 }
+        ]
+      }
+    })
+  await app.bot.handleUpdate(replied)
+  assert.equal(studioMission(store, 2).input.images.length, 1)
+  await app.bot.handleUpdate(update('/expense scan'))
+  assert.match(app.replies.at(-1)!, /Attach or reply/)
+  const repliedDocument = update('/expense scan')
+  if ('message' in repliedDocument)
+    Object.assign(repliedDocument.message, {
+      reply_to_message: {
+        message_id: 12,
+        date: 1,
+        chat: { id: 42, type: 'private' },
+        document: {
+          file_id: 'receipt-doc',
+          file_unique_id: 'd',
+          file_name: 'receipt.pdf',
+          mime_type: 'application/pdf'
+        }
+      }
+    })
+  await app.bot.handleUpdate(repliedDocument)
+  assert.equal(studioMission(store, 3).input.documents.length, 1)
+  const voice = update('/expense scan')
+  if ('message' in voice)
+    Object.assign(voice.message, {
+      reply_to_message: {
+        voice: { file_id: 'v', file_unique_id: 'v', duration: 1 },
+        message_id: 11,
+        date: 1,
+        chat: { id: 42, type: 'private' }
+      }
+    })
+  await app.bot.handleUpdate(voice)
+  assert.match(app.replies.at(-1)!, /Attach or reply/)
+  await app.bot.handleUpdate(
+    update('/mission context ' + studioMission(store).id)
+  )
+  assert.ok(app.documents.length)
+  const mission = studioMission(store)
+  app.bot.workspaceAction('42:42', {
+    action: 'start',
+    id: mission.id,
+    revision: mission.revision
+  })
+  await app.bot.tickJobs()
+  assert.equal(app.model.calls.length, 1)
+  const second = studioMission(store, 1)
+  app.bot.workspaceAction('42:42', {
+    action: 'start',
+    id: second.id,
+    revision: second.revision
+  })
+  await app.bot.handleUpdate(update('/project new Changed'))
+  await app.bot.tickJobs()
+  await app.bot.tickJobs()
+  await app.bot.tickJobs()
+  assert.equal(studioMission(store, 1).state, 'uncertain')
+  await app.bot.handleUpdate(
+    update('/reading add rss 1 https://example.com/feed')
+  )
+  await app.bot.tickJobs()
+  assert.equal(app.bot.workspace('42:42').home!.reading.length, 1)
+  const { Routines } = await import('../../application/routines.js'),
+    data = new Routines(settings, store)
+  for (const owner of ['42:43', '42:42:1', '99:99'])
+    data.update(owner, state => {
+      state.sources = structuredClone(data.get('42:42').sources)
+      state.sources[0]!.nextAt = 0
+    })
+  data.update('42:42', state => {
+    state.focus = { token: 'expired', task: null, start: 0, end: 1 }
+  })
+  await app.bot.tickJobs()
+  assert.ok(app.replies.some(text => /Focus timer finished/.test(text)))
+  await app.bot.handleUpdate(update('/data'))
+  await app.bot.handleUpdate(update('/erase confirm'))
+  assert.equal(
+    store.records('routines').some(([owner]) => owner === '42:42'),
+    false
+  )
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})

@@ -1,6 +1,6 @@
 # Pro experience release and acceptance
 
-Current release: **10.0.1**.
+Current release: **11.0.0**.
 
 These workflows were introduced in version 6.0.0. Start with `/guide`; delivery, saved evidence and structured outputs have dedicated navigation sections. Existing workflows remain documented in the [user guide](USER_GUIDE.md), [productivity guide](pro-productivity.md) and [workflow guide](pro-workflows.md).
 

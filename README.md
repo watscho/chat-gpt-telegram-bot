@@ -1,6 +1,6 @@
 # Telegram AI Bot Pro
 
-Current release: **10.0.1**.
+Current release: **11.0.0**.
 
 A private TypeScript Telegram assistant with text and voice conversations, photo analysis and editing, image generation, web search with sources, document questions, projects, named conversations, explicit saved memory, usage controls, streaming replies and durable background jobs. MIT licensed.
 
@@ -8,9 +8,9 @@ A private TypeScript Telegram assistant with text and voice conversations, photo
 
 ## Complete feature catalog
 
-**116 documented capabilities across 14 areas.** Each row groups related commands and controls into one capability. Expand an area to see its full list, entry points and guide.
+**130 documented capabilities across 15 areas.** Each row groups related commands and controls into one capability. Expand an area to see its full list, entry points and guide.
 
-Start in Telegram with `/start`, use `/suite` for reviewed specialized workflows, and open `/workspace` for the project/mission dashboard.
+Start in Telegram with `/start` or `/home`, use `/suite` for reviewed specialized workflows, and open `/workspace` for the project/mission dashboard.
 
 | Area                                                        | Capabilities | Guide                                                     |
 | ----------------------------------------------------------- | -----------: | --------------------------------------------------------- |
@@ -28,6 +28,32 @@ Start in Telegram with `/start`, use `/suite` for reviewed specialized workflows
 | [Workspace, results and records](#catalog-results)          |            6 | [Open guide](docs/pro-studio.md#results-and-revisions)    |
 | [Costs, privacy and data controls](#catalog-controls)       |            9 | [Open guide](docs/USER_GUIDE.md#data-and-limits)          |
 | [Engineering and operations](#catalog-engineering)          |            6 | [Open guide](CONTRIBUTING.md)                             |
+| [Daily routines](#catalog-routines)                         |           14 | [Open guide](docs/pro-routines.md)                        |
+| <a id="catalog-routines"></a>                               |
+
+<details>
+<summary><strong>Daily routines · 14 capabilities</strong></summary>
+
+| Capability                | What you can do                                                                                                        | Entry point                            |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Personalized home         | Choose three shortcuts and see local day, expense, recall and reply counts.                                            | `/home`                                |
+| Signed home panel         | Review local changes and prepare missions in the Mini App; add a supported home-screen shortcut explicitly.            | `/home workspace`                      |
+| Calendar read review      | Read a selected calendar window through approved MCP calls, then inspect/accept its coverage.                          | `/day calendar sync`                   |
+| Manual availability       | Supply explicitly verified busy intervals before planning.                                                             | `/day calendar manual`                 |
+| Priority day planning     | Fit task duration/priority/deadline into free windows with buffers and unscheduled tasks.                              | `/day task`, `/day plan`               |
+| Evening review            | Complete, keep, carry or cancel existing tasks with revision checks and recovery receipts.                             | `/day evening`                         |
+| Receipt ledger            | Scan only explicit receipts, correct proposals and accept exact integer monetary records.                              | `/expense scan`, `/expense correct`    |
+| Currency-separated totals | Record manual charges and inspect/export exact totals without FX conversion.                                           | `/expense add`, `/expense total`       |
+| Recorded subscriptions    | Track next charge dates and explicitly record payments.                                                                | `/expense subscription`                |
+| Linked refunds            | Track expected refunds and explicitly record receipts within the original charge.                                      | `/expense refund`, `/expense received` |
+| Spaced repetition         | Review sourced/manual cards, reveal answers and grade once with deterministic intervals.                               | `/review`                              |
+| Reply tracking and drafts | Track an explicit request, approve a scoped reply read and separately review follow-up drafts/sends.                   | `/waiting`                             |
+| Selected-source reading   | Subscribe to RSS/Atom/public pages, rank topics, read/save/hide, opt into digests and propose attributed model briefs. | `/reading`                             |
+| Focus timer               | Start/stop a local timed session and inspect claimed reminder delivery.                                                | `/focus`, `/day alerts`                |
+
+[Read the daily routines guide](docs/pro-routines.md).
+
+</details>
 
 <a id="catalog-conversations"></a>
 <details>
@@ -508,6 +534,7 @@ The tracked `pre-push` hook installs the exact lockfile without lifecycle script
 
 - [Full feature catalog](#complete-feature-catalog)
 - [User guide](docs/USER_GUIDE.md)
+- [Daily routines: home, planning, finance, recall, replies and reading](docs/pro-routines.md)
 - [Pro Suite: twenty connected workflows](docs/pro-suite.md)
 - [Pro Studio: missions, results and workspace](docs/pro-studio.md)
 - [Provider workbench and setup](docs/pro-provider.md)

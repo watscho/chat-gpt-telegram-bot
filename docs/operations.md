@@ -1,6 +1,6 @@
 # Operations
 
-Current release: **10.0.1**.
+Current release: **11.0.0**.
 
 ## Run and store state
 
@@ -125,3 +125,7 @@ Watch subscriptions perform unauthenticated public HTTPS reads without a model c
 ## Push verification
 
 Developer setup installs the tracked `.githooks/pre-push` with `npm run hooks:install` (also invoked by normal npm `prepare`). CI and the hook share `npm run verify`, including the high-severity advisory gate. The hook reinstalls locked dependencies without lifecycle scripts, requires a clean worktree/current outgoing HEAD, and rechecks both after verification. Existing hook configurations are preserved; see [contributing](../CONTRIBUTING.md) for integration and failure behavior. A local hook complements server-side CI and cannot establish native/deployment acceptance.
+
+## Daily routines upgrade
+
+Install the locked XML parser dependency with the application, stop the worker and back up private state first. Schema 3/archive format 2 are retained; owner `routines` records and optional Workflow recovery receipts are new. Restore matching pre-upgrade state/application for rollback. Configure owner-scoped read-only calendar/mail MCP tools, persistent `STATE_PATH`, allowlisted private users, timezone and existing signed `MINI_APP_URL` as needed. Local features need no new provider account. Scheduled public-source reads/reminders need a running worker; source subscriptions and daily reading/recall delivery are explicit user choices. Quiet hours defer claims, while failed notification attempts remain visible for manual review and are not automatically retried. Review [commands, limits and recovery](pro-routines.md) before enabling these workflows. Only unit/static/build verification applies; live/native/hosted deployment acceptance is outside this release scope.

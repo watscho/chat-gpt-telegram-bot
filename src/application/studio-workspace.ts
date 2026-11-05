@@ -1,3 +1,4 @@
+import type { RoutineHome } from './routine-home.js'
 import type { SuiteWorkspace } from './suite-workspace.js'
 import { sourceList } from './sources.js'
 import { UserError, type Document } from '../domain/conversation.js'
@@ -16,7 +17,8 @@ export class StudioWorkspace {
     private readonly workflow: Workflow,
     private readonly usage: UsageLedger,
     private readonly jobs: Jobs,
-    private readonly suite?: SuiteWorkspace
+    private readonly suite?: SuiteWorkspace,
+    private readonly home?: RoutineHome
   ) {}
   snapshot(owner: string, missionId?: string) {
     const thread = this.profiles.get(owner).active,
@@ -24,6 +26,7 @@ export class StudioWorkspace {
       workspace = this.ws.get(owner)
     return {
       suite: this.suite?.snapshot(owner),
+      home: this.home?.snapshot(owner),
       thread,
       threads: this.profiles.get(owner).threads,
       project: this.ws.thread(owner, thread).project,
@@ -132,6 +135,12 @@ export class StudioWorkspace {
       throw new UserError('Invalid workspace action.')
     const action = body.action,
       id = body.id
+    if (action.startsWith('home:')) {
+      if (!this.home) throw new UserError('Daily home is unavailable.')
+      const result = this.snapshot(owner)
+      result.home = this.home.action(owner, body)
+      return result
+    }
     if (action.startsWith('suite:')) {
       if (!this.suite) throw new UserError('Pro Suite is unavailable.')
       const result = this.snapshot(owner)

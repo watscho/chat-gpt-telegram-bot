@@ -183,8 +183,9 @@ export const articlePorts: ArticlePorts = {
           agent: false,
           rejectUnauthorized: true,
           headers: {
-            'User-Agent': 'TelegramAIReader/7.0',
-            Accept: 'text/html,text/plain',
+            'User-Agent': 'TelegramAIReader',
+            Accept:
+              'text/html,text/plain,application/rss+xml,application/atom+xml,application/xml,text/xml',
             'Accept-Encoding': 'identity'
           },
           // Pin the validated DNS result while preserving hostname/SNI and TLS verification.
@@ -225,11 +226,11 @@ export const articlePorts: ArticlePorts = {
       req.end()
     })
 }
-export async function readArticle(
+export async function readPublic(
   value: string,
   signal?: AbortSignal,
   ports: ArticlePorts = articlePorts
-): Promise<Article> {
+): Promise<ArticleResponse & { url: string }> {
   const deadline = AbortSignal.timeout(10000),
     combined = signal ? AbortSignal.any([signal, deadline]) : deadline
   try {
@@ -276,22 +277,35 @@ export async function readArticle(
           'Compressed article responses are not supported. Upload the text instead.'
         )
       if (
-        !/^text\/(html|plain)(?:;|$)/i.test(response.type) ||
-        (/charset=/i.test(response.type) &&
-          !/charset\s*=\s*["']?utf-8\b/i.test(response.type))
+        /charset=/i.test(response.type) &&
+        !/charset\s*=\s*["']?utf-8\b/i.test(response.type)
       )
         throw new UserError('Article must be HTML or plain UTF-8 text.')
       if (response.body.length > 1000000)
         throw new UserError('Article exceeds the 1 MB download limit.')
-      return {
-        url: url.href,
-        ...articleText(response.body, /^text\/html/i.test(response.type))
-      }
+      return { ...response, url: url.href }
     }
   } catch (error) {
     if (error instanceof UserError) throw error
     throw new UserError(
       'Unable to read this article safely. Try uploading its text; no model request was started.'
     )
+  }
+}
+
+export function readableMarkup(raw: string): string {
+  return decode(visibleHTML(raw))
+}
+export async function readArticle(
+  value: string,
+  signal?: AbortSignal,
+  ports: ArticlePorts = articlePorts
+): Promise<Article> {
+  const result = await readPublic(value, signal, ports)
+  if (!/^text\/(html|plain)(?:;|$)/i.test(result.type))
+    throw new UserError('Article must be HTML or plain UTF-8 text.')
+  return {
+    url: result.url,
+    ...articleText(result.body, /^text\/html/i.test(result.type))
   }
 }

@@ -1,6 +1,6 @@
 # Provider workbench
 
-Current release: **10.0.1**.
+Current release: **11.0.0**.
 
 The provider workbench supports five opt-in workflows to the existing private bot. `/pro` is the entry point. Pro names repository features; API billing, model access, MCP accounts and public HTTPS hosting are separate operator responsibilities. Startup does not verify provider acceptance.
 

@@ -1,6 +1,6 @@
 # Contributing
 
-Current release: **10.0.1**.
+Current release: **11.0.0**.
 
 Use Node from `.nvmrc` and npm from `package.json`; install with `npm ci --ignore-scripts`, then run `npm run hooks:install`. Automated checks need no credentials, live services or FFmpeg. Copy `.env.example` only when intentionally running a local bot. Repository source, comments, documentation, examples and commit messages use English.
 
@@ -43,3 +43,5 @@ Keep Studio lifecycle, provider execution, HTTP and browser-port tests adjacent 
 ## Release consistency
 
 `package.json` is the release-version source. Keep the root lockfile entries, latest changelog entry and exactly one `Current release: **VERSION**.` declaration in README, contributing/security guidance and every Markdown guide under `docs/` synchronized. Guide titles stay unversioned; explicitly historical introduction counts, changelog records, database/archive schemas, dependency versions and migration instructions keep their own original numbers. `npm run docs:check` enforces release declarations and README capability/area totals before unit checks and before push.
+
+Daily routine changes must preserve explicit material selection, inert paid plans, separate exact local acceptance, integer currency arithmetic, source attribution, scoped expiring card/review tokens and claim-before-delivery behavior. Add adjacent unit tests with synthetic XML and mocked service/state/DOM/transport ports; do not add network, browser, native database, integration or paid provider tests. Keep the [complete feature catalog](README.md#complete-feature-catalog), [daily routines guide](docs/pro-routines.md), current-release declarations and changelog synchronized.

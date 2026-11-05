@@ -1,6 +1,14 @@
+import { renderHome } from './home-panel.js'
 import type { WorkspaceView } from '../application/studio-workspace.js'
 export interface WorkspaceWindow {
-  Telegram?: { WebApp?: { initData: string; ready(): void; expand(): void } }
+  Telegram?: {
+    WebApp?: {
+      initData: string
+      ready(): void
+      expand(): void
+      addToHomeScreen?(): void
+    }
+  }
   confirm(message: string): boolean
   addEventListener(type: string, callback: () => void): void
 }
@@ -33,7 +41,7 @@ export function mountWorkspace(
   app?.ready()
   app?.expand()
   let view: WorkspaceView | null = null,
-    section = 'Missions',
+    section = 'Home',
     busy = false,
     selected: string | undefined,
     alive = true,
@@ -149,6 +157,7 @@ export function mountWorkspace(
     node.value = current
   }
   const render = (snapshot: WorkspaceView) => {
+    if (section === 'Home' && !snapshot.home) section = 'Missions'
     title.textContent = section
     status.textContent = 'Updated'
     error.hidden = true
@@ -161,6 +170,7 @@ export function mountWorkspace(
     usage.textContent = `${snapshot.usage.requests} requests today · estimated $${(snapshot.usage.estimatedMicroUsd / 1000000).toFixed(2)}`
     nav.replaceChildren()
     for (const name of [
+      ...(snapshot.home ? ['Home'] : []),
       'Missions',
       'Inbox',
       'Tasks',
@@ -175,6 +185,20 @@ export function mountWorkspace(
       element.setAttribute('aria-current', String(section === name))
     }
     list.replaceChildren()
+    if (section === 'Home' && snapshot.home)
+      renderHome(document, list, snapshot.home, {
+        act: body => {
+          void act(body)
+        },
+        inspect: id => {
+          section = 'Missions'
+          void act({ action: 'inspect', id })
+        },
+        confirm: message => window.confirm(message),
+        ...(app?.addToHomeScreen
+          ? { shortcut: () => app.addToHomeScreen!() }
+          : {})
+      })
     if (section === 'Missions')
       for (const mission of snapshot.missions) {
         const node = article(

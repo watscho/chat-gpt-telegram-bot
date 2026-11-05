@@ -226,7 +226,8 @@ export class Studio {
             !step.prompt.trim() ||
             step.prompt.length > 2000 ||
             ((step.kind === 'media' || step.kind === 'local') &&
-              !step.workflow) ||
+              !step.workflow &&
+              !step.routine) ||
             (step.kind === 'connection' &&
               !this.config.workbench.connections.some(
                 connection =>
@@ -241,6 +242,7 @@ export class Studio {
       steps = custom.map(spec => ({
         ...this.step(spec.kind, spec.title, spec.prompt, spec.connection),
         ...(spec.workflow ? { workflow: structuredClone(spec.workflow) } : {}),
+        ...(spec.routine ? { routine: structuredClone(spec.routine) } : {}),
         estimate: studioEstimate(this.config, spec.kind, spec.workflow)
       }))
     } else if (mode === 'chain') {

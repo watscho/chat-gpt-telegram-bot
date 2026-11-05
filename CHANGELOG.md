@@ -1,5 +1,18 @@
 # Changelog
 
+## 11.0.0 — Daily routines
+
+- Add a personalized Telegram and signed Mini App home with three configurable shortcuts, local overview and focus timer.
+- Add reviewed calendar/manual availability snapshots, deterministic duration/priority/deadline planning, evening outcomes and interruption-safe task receipts.
+- Add explicit receipt extraction, corrected ledger acceptance, integer currency-separated totals, recorded subscriptions/payments and linked refund controls.
+- Add source-bound recall cards, reveal-before-rating sessions, fixed spaced-repetition intervals and opt-in due reminders.
+- Add explicit correspondence tracking, separately approved service reads, quoted/timestamped reply reviews and draft-first follow-ups with exact send approvals.
+- Add selected RSS/Atom/public-page reading, pinned bounded HTTPS transport, canonical-link deduplication, transparent topic ranking, read/save/hide controls, local daily digests and separately approved attributed model briefs.
+- Include owner lifecycle/export/erase, stale-scope checks, bounded state, claimed reminders, complete English operator/user documentation and a 130-capability README catalog across 15 areas.
+- Pass 440 isolated adjacent unit tests with mocked model/service/network/transport/state/DOM ports and 100% source lines, branches and functions; pass static/build checks and report zero npm audit vulnerabilities. Retain the shared pre-push/CI verification. No paid, native, browser, integration or deployment acceptance runs are part of this release.
+
+Breaking change: new routine records and locked XML parser dependency require upgrading the application/dependencies together. Schema 3 and archive format 2 remain unchanged; archive import does not activate routine schedules or financial records. Back up private state before upgrading and restore matching pre-upgrade state/application for rollback.
+
 ## 10.0.1 — Complete catalog and push verification
 
 - Lead the README with a full catalog of 116 documented capabilities across 14 areas, including expandable details, commands and source guides for all release generations.

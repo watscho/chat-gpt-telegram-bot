@@ -1,3 +1,17 @@
+import { Routines } from '../application/routines.js'
+import { RoutineCalendar } from '../application/routine-calendar.js'
+import { RoutineFinance } from '../application/routine-finance.js'
+import { RoutineLearning } from '../application/routine-learning.js'
+import { RoutineWaiting } from '../application/routine-waiting.js'
+import { RoutineReading } from '../application/routine-reading.js'
+import { RoutineAlerts } from '../application/routine-alerts.js'
+import { RoutineExecutor } from '../application/routine-executor.js'
+import { RoutinePlans } from '../application/routine-plans.js'
+import { RoutineReviews } from '../application/routine-reviews.js'
+import { RoutineHome } from '../application/routine-home.js'
+import { RoutineCommands, type RoutineContext } from './routine-commands.js'
+import { readReadingSource } from '../infrastructure/reading-source.js'
+import type { ReadingPorts } from '../domain/routine.js'
 import { suiteMessage, suiteVideo } from './suite-input.js'
 import { SuiteWorkspace } from '../application/suite-workspace.js'
 import { Suite } from '../application/suite.js'
@@ -85,6 +99,7 @@ export interface BotDependencies {
   downloadImage?: typeof downloadTelegramImage
   downloadAudio?: typeof downloadTelegramAudio
   extractText?: typeof extractDocumentText
+  readReading?: typeof readReadingSource
   readArticle?: typeof readArticle
   assets?: import('../domain/suite.js').SuiteAssetPorts
   reportError?: () => void
@@ -136,6 +151,7 @@ export function createBot({
   downloadAudio = downloadTelegramAudio,
   extractText = extractDocumentText,
   readArticle: article = readArticle,
+  readReading = readReadingSource,
   assets = suiteAssets(config),
   reportError = () => console.error('Telegram update failed')
 }: BotDependencies): ManagedBot {
@@ -477,6 +493,54 @@ export function createBot({
         )
     }
   )
+  const routines = new Routines(config, store)
+  const routineCalendar = new RoutineCalendar(routines, workflow)
+  const routineFinance = new RoutineFinance(routines)
+  const routineLearning = new RoutineLearning(routines)
+  const routineWaiting = new RoutineWaiting(routines)
+  const routinePorts: ReadingPorts = {
+    allowed: owner => {
+      const parts = owner.split(':')
+      return (
+        parts.length === 2 &&
+        parts[0] === parts[1] &&
+        config.allowedUsers.has(Number(parts[0]))
+      )
+    },
+    quiet: owner => experience.isQuiet(owner, workspaces.get(owner).timezone),
+    timezone: owner => workspaces.get(owner).timezone,
+    read: readReading,
+    notify: async (owner, text) => {
+      for (const chunk of splitReply(text))
+        await bot.telegram.sendMessage(Number(owner.split(':')[0]), chunk)
+    }
+  }
+  const routineReading = new RoutineReading(routines, routinePorts, experience)
+  const routineAlerts = new RoutineAlerts(
+    routines,
+    routinePorts,
+    routineReading
+  )
+  const routineExecutor = new RoutineExecutor(
+    routineCalendar,
+    routineFinance,
+    routineLearning,
+    routineWaiting,
+    routineReading,
+    studioExecutor,
+    suiteExecutor,
+    (owner, mission) => {
+      if (
+        !profiles
+          .get(owner)
+          .threads.some(thread => thread.id === mission.thread) ||
+        workspaces.thread(owner, mission.thread).project !== mission.project
+      )
+        throw new UserError(
+          'Select the original daily workflow conversation/project or create a fresh plan.'
+        )
+    }
+  )
   const studio = new Studio(
     config,
     {
@@ -497,7 +561,7 @@ export function createBot({
         sessionLocks.add(session)
         background++
         try {
-          return await suiteExecutor.execute(owner, mission, step, signal)
+          return await routineExecutor.execute(owner, mission, step, signal)
         } finally {
           sessionLocks.delete(session)
           background--
@@ -549,6 +613,51 @@ export function createBot({
     assets,
     suiteExecutor
   )
+  const routinePlans = new RoutinePlans(
+    routines,
+    workspaces,
+    studio,
+    suite,
+    routineCalendar,
+    routineWaiting,
+    routineReading
+  )
+  const routineReviews = new RoutineReviews(
+    routines,
+    routineCalendar,
+    routineFinance,
+    routineLearning,
+    routineWaiting
+  )
+  const routineCommands = new RoutineCommands(
+    routines,
+    routineCalendar,
+    routineFinance,
+    routineLearning,
+    routineWaiting,
+    routineReading,
+    routinePlans,
+    routineExecutor,
+    studio,
+    studioCommands,
+    workspaces,
+    workflow,
+    suite,
+    routineReviews
+  )
+  const routineHome = new RoutineHome(
+    routines,
+    routineCalendar,
+    routineFinance,
+    routineLearning,
+    routineWaiting,
+    routineReading,
+    routinePlans,
+    routineReviews,
+    profiles,
+    workspaces,
+    workflow
+  )
   const studioWorkspace = new StudioWorkspace(
     studio,
     profiles,
@@ -571,7 +680,8 @@ export function createBot({
         suite
       ),
       Boolean(store && config.statePath !== ':memory:')
-    )
+    ),
+    routineHome
   )
   jobs.recover()
   const flowCommands = new WorkflowCommands(
@@ -682,6 +792,8 @@ export function createBot({
     await jobs.tick()
     await studio.tick()
     await watches.tick()
+    await routineReading.tick()
+    await routineAlerts.tick()
     await workflow.tick(
       owner => {
         const parts = owner.split(':')
@@ -777,6 +889,7 @@ export function createBot({
   bot.stopJobs = () => {
     studio.stop()
     watches.stop()
+    routineReading.stop()
     jobs.stop()
     void live.stop().catch(reportError)
   }
@@ -914,6 +1027,7 @@ export function createBot({
 
   const help = [
     '/suite — search, watches, documents, learning, travel, shared projects and reviewed workflow recipes.',
+    '/home — personalized daily actions. /day — calendar-aware planning and evening review. /expense — receipts, subscriptions and refunds. /review — spaced repetition. /waiting — reply tracking and reviewed drafts. /reading — selected-source digests. /focus — local timer.',
     '/workspace — project workspace. /inbox — capture without generation. /autopilot — reviewed multi-step work. /investigate — source-backed research. /chain — reviewed service sequence. /missions and /mission — checkpoints. /result — versions, edits and exports.',
     '/pro — provider workbench. /analyze — Python data analysis. /knowledge — cloud semantic library. /connections and /connect — reviewed external actions. /meeting — recording protocol. /live — live voice. /cloud_cleanup — remote resource status.',
     '/today — daily dashboard. /morning — optional local morning overview. /scenarios, /favorite, /run — quick workflows. /notes — reviewed voice tasks. /read — article reader. /continue — project context review. /onboarding — guided setup.',
@@ -1014,6 +1128,7 @@ export function createBot({
         experience.deleteThread(owner, profiles.get(owner).active)
         daily.deleteThread(owner, profiles.get(owner).active)
         workbench.deleteThread(owner, profiles.get(owner).active)
+        routines.deleteThread(owner, profiles.get(owner).active)
         suite.deleteThread(owner, profiles.get(owner).active)
         studio.deleteThread(owner, profiles.get(owner).active)
         conversations.reset(sessionFor(ctx))
@@ -1060,6 +1175,7 @@ export function createBot({
         experience.deleteThread(owner, argument)
         daily.deleteThread(owner, argument)
         workbench.deleteThread(owner, argument)
+        routines.deleteThread(owner, argument)
         suite.deleteThread(owner, argument)
         studio.deleteThread(owner, argument)
         conversations.reset(`${owner}:${argument}`)
@@ -1586,6 +1702,29 @@ export function createBot({
     },
     video: () => suiteVideo(suiteMessage(ctx.message))
   })
+  const routineContext = (
+    ctx: Context,
+    images: Image[] = [],
+    documents: Document[] = []
+  ): RoutineContext => ({
+    ...suiteContext(ctx, images, documents),
+    materials: async () => {
+      if (images.length || documents.length) return { images, documents }
+      const message = ctx.message,
+        source =
+          message && 'reply_to_message' in message
+            ? message.reply_to_message
+            : message
+      const attachment =
+        source && !('video' in source) && !recordingMeta(source)
+          ? await readAttachment(ctx, source)
+          : {}
+      return {
+        images: attachment.image ? [attachment.image] : [],
+        documents: attachment.document ? [attachment.document] : []
+      }
+    }
+  })
   const respond = async (
     ctx: Context,
     text: string,
@@ -1607,6 +1746,13 @@ export function createBot({
         await uiReply(ctx, `Saved to Inbox: ${item.id}. /inbox view ${item.id}`)
         return
       }
+      if (
+        await routineCommands.handle(
+          routineContext(ctx, images, documents),
+          text
+        )
+      )
+        return
       if (
         await suiteCommands.handle(suiteContext(ctx, images, documents), text)
       )
@@ -1718,6 +1864,7 @@ export function createBot({
           experience: experience.get(owner),
           daily: daily.get(owner),
           suite: suite.get(owner),
+          routines: routines.get(owner),
           watches: watches.get(owner),
           sharedProjects:
             config.statePath !== ':memory:' && store ? teams.export(owner) : [],
@@ -1731,6 +1878,8 @@ export function createBot({
           workflow.erase(owner)
           experience.erase(owner)
           daily.erase(owner)
+          routineReading.erase(owner)
+          routines.erase(owner)
           suite.erase(owner)
           watches.erase(owner)
           teams.erase(owner)
@@ -2151,6 +2300,14 @@ export function createBot({
   bot.on('callback_query', async ctx => {
     if (!('data' in ctx.callbackQuery)) {
       await ctx.answerCbQuery('Unsupported control.')
+      return
+    }
+    if (ctx.callbackQuery.data.startsWith('routine:')) {
+      await routineCommands.callback(
+        routineContext(ctx),
+        ctx.callbackQuery.data
+      )
+      await ctx.answerCbQuery()
       return
     }
     if (ctx.callbackQuery.data.startsWith('studio:')) {

@@ -1,6 +1,6 @@
 # Pro workflows release and acceptance
 
-Current release: **10.0.1**.
+Current release: **11.0.0**.
 
 These seven workflows were introduced in version 5.0.0 while retaining private-chat allowlisting, local ownership, complete-turn persistence and unit-only verification.
 
