@@ -75,6 +75,43 @@ export class Workflow {
     this.save(owner, state)
     return structuredClone(task)
   }
+  addReviewedTasks(
+    owner: string,
+    thread: string,
+    token: string,
+    items: { title: string; dueAt: number | null }[]
+  ): number {
+    const state = this.get(owner)
+    const fresh = items
+      .map((item, index) => ({ ...item, id: `note-${token}-${index}` }))
+      .filter(item => !state.tasks.some(task => task.id === item.id))
+    if (
+      items.length > 10 ||
+      state.tasks.length + fresh.length > 100 ||
+      fresh.some(
+        item =>
+          !item.title.trim() ||
+          item.title.length > 1000 ||
+          (item.dueAt !== null &&
+            (!Number.isFinite(item.dueAt) || item.dueAt <= this.now()))
+      )
+    )
+      throw new UserError(
+        'Reviewed tasks exceed capacity or have invalid/past deadlines. Create a new review.'
+      )
+    state.tasks.push(
+      ...fresh.map(item => ({
+        ...item,
+        thread,
+        status: 'open' as const,
+        reminded: false,
+        attempts: 0,
+        nextAttempt: 0
+      }))
+    )
+    this.save(owner, state)
+    return fresh.length
+  }
   task(
     owner: string,
     id: string,

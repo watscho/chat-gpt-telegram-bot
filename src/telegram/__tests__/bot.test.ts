@@ -2163,3 +2163,182 @@ void test('rescheduled or cleared task deadlines suppress old digest entries and
   )
   assert.equal(app.model.calls.length, 0)
 })
+
+void test('onboarding, favorite scenarios and project continuation use real handlers with explicit paid entry points', async () => {
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store)
+  await app.bot.handleUpdate(update('/start'))
+  assert.equal(app.model.calls.length, 0)
+  await app.bot.handleUpdate(callback('daily:focus:work'))
+  await app.bot.handleUpdate(callback('daily:language:en'))
+  await app.bot.handleUpdate(callback('daily:example'))
+  assert.equal(app.model.calls.length, 1)
+  await app.bot.handleUpdate(update('/start'))
+  await app.bot.handleUpdate(update('/favorite add polish'))
+  await app.bot.handleUpdate(callback('daily:run:polish'))
+  await app.bot.handleUpdate(update('Please polish this draft'))
+  assert.equal(app.model.calls.length, 2)
+  assert.match(app.model.calls.at(-1)!.at(-1)!.content, /User content:/)
+  await app.bot.handleUpdate(callback(button(app, 'act:checklist:')))
+  assert.equal(app.model.calls.length, 3)
+  await app.bot.handleUpdate(update('/project new Work'))
+  await app.bot.handleUpdate(update('/continue'))
+  await app.bot.handleUpdate(callback('daily:resume:1'))
+  assert.equal(app.model.calls.length, 3)
+  const token = button(app, 'context:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`context:${token}:send`))
+  assert.equal(app.model.calls.length, 4)
+  await app.bot.handleUpdate(update('/today'))
+  assert.match(app.replies.at(-1)!, /Today/)
+  await app.bot.handleUpdate(update('/reset'))
+  await app.bot.handleUpdate(update('/erase confirm'))
+  assert.equal(store.getRecord('daily', '42:42'), undefined)
+})
+
+void test('voice notes preserve reviewed context intent and create idempotent local tasks only after a second confirmation', async () => {
+  const model = new FakeModel(),
+    raw = JSON.stringify({
+      rows: [{ summary: 'Agreed work', task: 'Review the proposal', due: null }]
+    })
+  model.answer = {
+    text: 'Structured output ready',
+    images: [],
+    artifact: {
+      rows: 1,
+      name: 'result.json',
+      mime: 'application/json',
+      data: Buffer.from(raw).toString('base64')
+    }
+  }
+  const store = new MemoryStateStore(),
+    app = setup(model, 10, undefined, store, {
+      config: { ...config(), streamResponses: true }
+    })
+  await app.bot.handleUpdate(update('/notes on'))
+  await app.bot.handleUpdate(update('/context on'))
+  await app.bot.handleUpdate(voiceUpdate())
+  assert.equal(model.calls.length, 0)
+  const preview = button(app, 'context:').split(':')[1]!
+  app.transport.failEdits = 1
+  await app.bot.handleUpdate(callback(`context:${preview}:send`))
+  assert.equal(model.calls.length, 1)
+  assert.equal(app.documents.length, 0)
+  assert.equal(
+    store.getRecord<{ tasks: unknown[] }>('workflow', '42:42')?.tasks.length ??
+      0,
+    0
+  )
+  const confirm = button(app, 'daily:tasks:')
+  await app.bot.handleUpdate(callback(confirm))
+  assert.equal(
+    store.getRecord<{ tasks: unknown[] }>('workflow', '42:42')!.tasks.length,
+    1
+  )
+  await app.bot.handleUpdate(callback(confirm))
+  assert.equal(model.calls.length, 1)
+  await app.bot.handleUpdate(update('/context off'))
+  await app.bot.handleUpdate(voiceUpdate())
+  assert.equal(model.calls.length, 2)
+  assert.match(app.edits.at(-1)!, /ready for review/)
+  await app.bot.handleUpdate(callback(button(app, 'daily:cancel:')))
+})
+
+void test('article reads attach the retrieved excerpt, retain evidence and respect cancellation and ordinary usage', async () => {
+  let reads = 0
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store, {
+      readArticle: (url, signal) => {
+        reads++
+        assert.ok(signal)
+        return Promise.resolve({
+          url,
+          title: 'Article title',
+          text: 'Visible article '.repeat(20),
+          truncated: true
+        })
+      }
+    })
+  await app.bot.handleUpdate(
+    update('/read https://example.com/story | Explain the claims')
+  )
+  assert.equal(reads, 1)
+  assert.equal(app.model.calls.length, 1)
+  assert.match(app.model.options[0]!.references!, /truncated: true/)
+  assert.equal(app.model.options[0]!.enableSearch, false)
+  await app.bot.handleUpdate(callback(button(app, 'act:translate:')))
+  await app.bot.handleUpdate(update('A plain text answer'))
+  await app.bot.handleUpdate(callback(button(app, 'act:translate:')))
+  await app.bot.handleUpdate(callback(button(app, 'act:risks:')))
+  await app.bot.handleUpdate(update('https://example.com/next'))
+  assert.equal(reads, 2)
+  await app.bot.handleUpdate(update('/context on'))
+  await app.bot.handleUpdate(update('/read https://example.com/review'))
+  const token = button(app, 'context:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`context:${token}:send`))
+  assert.equal(reads, 3)
+  const stop = setup(undefined, 10, undefined, new MemoryStateStore(), {
+    readArticle: (_url, signal) =>
+      new Promise((_resolve, reject) =>
+        signal!.addEventListener(
+          'abort',
+          () => reject(new Error('cancelled')),
+          { once: true }
+        )
+      )
+  })
+  const reading = stop.bot.handleUpdate(update('/read https://example.com'))
+  await new Promise(resolve => setImmediate(resolve))
+  await stop.bot.handleUpdate(update('/stop'))
+  await reading
+  assert.equal(stop.model.calls.length, 0)
+  assert.equal(stop.errors(), 0)
+})
+
+void test('morning dashboard worker respects owner allowlists and quiet windows without a model call', async () => {
+  let now = Date.parse('2026-11-05T07:00:00Z')
+  mock.method(Date, 'now', () => now)
+  const { Daily } = await import('../../application/daily.js')
+  const store = new MemoryStateStore(),
+    daily = new Daily(store)
+  for (const owner of ['42:42', '42:43', '42:42:1', '99:99'])
+    daily.morning(owner, '08:00')
+  const app = setup(undefined, 10, undefined, store)
+  await app.bot.handleUpdate(update('/quiet 07:00-09:00'))
+  now += 3600000
+  await app.bot.tickJobs()
+  assert.equal(app.replies.length, 1)
+  now += 3600000
+  app.transport.failMessages = true
+  await app.bot.tickJobs()
+  app.transport.failMessages = false
+  now += 60000
+  await app.bot.tickJobs()
+  await app.bot.tickJobs()
+  assert.equal(app.replies.filter(text => text.startsWith('Today')).length, 1)
+  assert.equal(app.model.calls.length, 0)
+  await app.bot.handleUpdate(update('/morning off'))
+})
+
+void test('image-specific actions retain the selected photo and preserve cost review before a background edit', async () => {
+  const app = setup(undefined, 10, undefined, new MemoryStateStore(), {
+    config: { ...config(), confirmExpensiveRequests: true }
+  })
+  await app.bot.handleUpdate(photoUpdate('Explain this photo'))
+  const background = button(app, 'act:background:')
+  await app.bot.handleUpdate(callback(button(app, 'act:translate:')))
+  assert.match(
+    app.model.calls.at(-1)!.at(-1)!.content,
+    /visible text in the selected image/
+  )
+  assert.equal(app.model.options.at(-1)!.enableImages, false)
+  await app.bot.handleUpdate(callback(background))
+  assert.match(app.replies.at(-1)!, /no longer retained/)
+  await app.bot.handleUpdate(photoUpdate('Use this photo'))
+  await app.bot.handleUpdate(callback(button(app, 'act:background:')))
+  const count = app.model.calls.length,
+    token = button(app, 'context:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`context:${token}:send`))
+  assert.equal(app.model.calls.length, count + 1)
+  assert.equal(app.model.options.at(-1)!.action, 'edit')
+  assert.ok(app.model.calls.at(-1)!.at(-1)!.images!.length)
+})

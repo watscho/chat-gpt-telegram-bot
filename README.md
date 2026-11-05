@@ -37,7 +37,8 @@ npm start
 
 | Command                                  | Behavior                                                                        |
 | ---------------------------------------- | ------------------------------------------------------------------------------- |
-| `/start`, `/help`                        | Show help without clearing history                                              |
+| `/start`                                 | Guided setup for new users; Today after setup, preserving history               |
+| `/help`                                  | Show the full command reference and guided workflow menu                        |
 | `/new [name]`                            | Create and select an independent conversation                                   |
 | `/chats`                                 | List your conversations and selected ID                                         |
 | `/switch id`                             | Continue another conversation                                                   |
@@ -103,6 +104,24 @@ Open `/guide` (also shown by `/help`) for buttons grouped by tasks, context, doc
 | Move to another installation       | `/data`, then reply to the archive with `/import` and inspect the merge preview |
 
 See [Pro workflows and transfer limits](docs/pro-workflows.md). All tests remain unit-only; live/native behavior is not qualified by coverage.
+
+## Daily workflows
+
+Version 7 makes the main workflows accessible from a short guided start and contextual answer buttons. `/start` opens setup for a new user and Today after setup; `/help` and `/guide` retain the complete reference.
+
+| Goal                              | Entry point                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------ |
+| Get a useful first result         | `/onboarding`: focus, language, explicit Try example; Skip setup is free       |
+| Act on an answer or photo         | Checklist, risks, translation, tasks, comparison and studio-background buttons |
+| Turn voice notes into actions     | `/notes on`, send voice, inspect summary/deadlines, Create reviewed tasks      |
+| See what needs attention          | `/today`; optional `/morning 09:00` in `/timezone`                             |
+| Read an article and ask questions | Send a standalone public HTTPS URL or `/read URL \| focus`                     |
+| Reuse favorite workflows          | `/scenarios`, `/favorites`, `/favorite add polish`, `/run polish \| draft`     |
+| Resume a project deliberately     | `/continue`, choose a conversation, review/exclude context before generation   |
+
+No task is created from a generated proposal until you confirm. Today/morning are local overviews with no model call. Article reading downloads a bounded public page and sends its readable excerpt for requested processing; scripts, login and paywall bypass are unsupported. Favorites reuse existing templates; legacy `/run name {"variable":"value"}` syntax remains supported.
+
+See the [daily workflow guide and acceptance](docs/pro-daily.md) for complete syntax, costs, limits and privacy. Source/docs remain English; multilingual UI values are isolated in the locale catalog. Schema 3 and archive format 2 remain unchanged.
 
 ## Pro experience
 
@@ -171,6 +190,7 @@ CI runs static checks, unit tests, the 100% coverage gate and a dependency advis
 ## Documentation
 
 - [User guide](docs/USER_GUIDE.md)
+- [Daily workflows and acceptance](docs/pro-daily.md)
 - [Pro experience, limits and acceptance](docs/pro-experience.md)
 - [Configuration reference](docs/configuration.md)
 - [Operations, Docker, backups and live verification](docs/operations.md)

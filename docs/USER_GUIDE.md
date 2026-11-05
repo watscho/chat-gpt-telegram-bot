@@ -4,7 +4,7 @@ The bot works in private chats for allowlisted users only. Features use the Open
 
 ## Quick navigation
 
-- Use `/guide` for a button menu grouped by goal, or `/settings` to change preferences.
+- Start with `/start` or `/today`; use `/guide` for a button menu grouped by goal, or `/settings` to change preferences.
 - Start with [tasks and deadlines](#tasks-and-deadlines), [batch document work](#batch-document-work), or [data transfer](#move-your-data-to-another-installation).
 - Review [cost confirmations](#estimates-before-expensive-work) before starting images or background jobs.
 - Inspect [context](#inspect-and-exclude-context-before-generation), [recaps and quoted answers](#recaps-and-replies-to-specific-answers), and [project glossaries](#project-glossary) when an answer needs better grounding.
@@ -57,7 +57,7 @@ Without a caption, the bot prepares an initial summary. Follow up with questions
 
 Each conversation has its own text and attachment history. `/chats` displays conversation IDs and the active selection. You cannot access another user's conversations. Keep at least one conversation; use `/reset` to clear the last one.
 
-`/new` creates a conversation. `/reset` clears only the active conversation. `/start` and `/help` display help without clearing anything.
+`/new` creates a conversation. `/reset` clears only the active conversation. `/start` opens guided setup or Today; `/help` opens the command reference. Neither clears history.
 
 In a normal production setup, SQLite stores data across restarts. By default, history expires after one hour of inactivity, retains up to 20 complete exchanges and has additional size limits. Conversation names are stored separately. Older history is removed when capacity limits are reached. This is not an indefinite archive.
 
@@ -421,3 +421,17 @@ Start with `/guide delivery`, `/guide saved` or `/guide outputs`. The [Pro exper
 ```
 
 Quiet hours delay notifications while background work can still run. `/result ID` remains immediate; `/notifications retry ID` retries delivery only. Save answer/source buttons make explicit bookmarks; source-card buttons display retained excerpts without fetching a webpage. Bookmarks survive history expiry/reset until explicitly deleted or erased. Project estimates share the owner's UTC budget and are not invoices. CSV/JSON output uses nullable string cells and is validated for shape/size, not truth. Queue positions are local snapshots without ETAs. Interface and answer languages are independent; technical UI text without a catalog entry remains English.
+
+## Daily entry points (version 7)
+
+`/start` now opens short guided setup, then Today on later visits. `/help` remains the full reference. Use `/guide daily` or the [daily workflow guide](pro-daily.md) for complete syntax, costs and limits.
+
+- `/onboarding`: choose a focus/language, then explicitly try a paid example or skip for free.
+- Contextual answer buttons: checklist, risks, translation, reviewed tasks, file comparison and a studio-background image edit.
+- `/notes on|off`: opt into voice summaries/task proposals; inspect and confirm before any task is created.
+- `/today`: local tasks and ready results; `/morning HH:MM|off` enables an optional quiet-hour-aware local overview.
+- Send a standalone HTTPS article URL or `/read URL | focus`; ask follow-up questions about the retained readable excerpt.
+- `/scenarios [page]`, `/favorites [page]`, `/favorite add|remove ID`, `/run ID | input`; template IDs use `template:NAME`. Legacy `/run NAME {"variable":"value"}` still works.
+- `/continue`: inspect project excerpts, select a conversation and explicitly review/exclude context before generating a next step.
+
+Pending scenario input and task reviews expire after ten minutes. `/scenario_cancel` cancels pending scenario input. Article fetching is unauthenticated public HTTPS only; page text is then sent to the model under normal limits. Morning summaries are local and make no model call. Daily settings/favorites/reviews are exported privately but are not restored by archive import; destination preferences remain authoritative.

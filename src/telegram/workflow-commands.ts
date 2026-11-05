@@ -20,6 +20,8 @@ export interface WorkflowContext {
   imported(): void
 }
 const sections: Record<string, string> = {
+  daily:
+    'Daily workflows\n/today shows tasks and ready results. /morning 09:00 enables a local morning dashboard. /scenarios and /favorites launch reusable workflows; /notes on turns voice messages into reviewed task proposals. /read URL reads an article; /continue reviews project context. /onboarding restarts guided setup.',
   delivery:
     'Delivery and language\n/quiet 22:00-08:00 and /digest 1h group background notifications. /notifications lists pending items; /digest now delivers them immediately. /language ui en|ru|es changes menus, while /language answer auto|code controls generated prose.',
   saved:

@@ -213,6 +213,7 @@ export class Productivity {
         request.references
       )
     const draft: ContextDraft = {
+      ...(request.reviewTasks ? { reviewTasks: true } : {}),
       ...(request.evidence ? { evidence: request.evidence } : {}),
       ...(request.structured ? { structured: request.structured } : {}),
       token: randomUUID().slice(0, 12),
@@ -277,6 +278,7 @@ export class Productivity {
   ): PreparedRequest {
     const draft = this.draft(owner, thread, token, revision)
     const request: PreparedRequest = {
+      ...(draft.reviewTasks ? { reviewTasks: true } : {}),
       ...(draft.structured ? { structured: draft.structured } : {}),
       prompt: draft.prompt,
       images: [],

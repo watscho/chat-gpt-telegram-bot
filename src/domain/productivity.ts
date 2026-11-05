@@ -7,6 +7,7 @@ import type {
 } from './conversation.js'
 
 export interface PreparedRequest {
+  reviewTasks?: boolean
   evidence?: Evidence[]
   structured?: StructuredSpec
   summary?: string
@@ -34,6 +35,7 @@ export interface ContextPart {
   enabled: boolean
 }
 export interface ContextDraft {
+  reviewTasks?: boolean
   token: string
   thread: string
   revision: string | undefined

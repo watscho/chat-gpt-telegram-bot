@@ -1,3 +1,6 @@
+import { Daily } from '../application/daily.js'
+import { DailyCommands, type DailyContext } from './daily-commands.js'
+import { readArticle } from '../infrastructure/article-reader.js'
 import { referenceId } from '../application/evidence.js'
 import { Experience } from '../application/experience.js'
 import {
@@ -53,6 +56,7 @@ export interface BotDependencies {
   downloadImage?: typeof downloadTelegramImage
   downloadAudio?: typeof downloadTelegramAudio
   extractText?: typeof extractDocumentText
+  readArticle?: typeof readArticle
   reportError?: () => void
 }
 
@@ -85,6 +89,7 @@ export function createBot({
   downloadImage = downloadTelegramImage,
   downloadAudio = downloadTelegramAudio,
   extractText = extractDocumentText,
+  readArticle: article = readArticle,
   reportError = () => console.error('Telegram update failed')
 }: BotDependencies): ManagedBot {
   const bot = new Telegraf(config.telegramToken, {
@@ -98,6 +103,7 @@ export function createBot({
   const productivity = new Productivity(store)
   const workflow = new Workflow(store)
   const experience = new Experience(store)
+  const daily = new Daily(store)
   const importer = store ? new ArchiveImport(config, store) : undefined
   const library = new Library(extractText, store)
   const advanced = new ProductivityCommands(
@@ -411,6 +417,16 @@ export function createBot({
           receipts.get(notice.id) ?? 'sent'
         )
   }
+  const dailyCommands = new DailyCommands(
+    daily,
+    profiles,
+    workspaces,
+    conversations,
+    workflow,
+    jobs,
+    productivity,
+    experience
+  )
   const experienceCommands = new ExperienceCommands(
     experience,
     jobs,
@@ -469,6 +485,25 @@ export function createBot({
       },
       owner => workspaces.get(owner).timezone,
       deliverDigest
+    )
+    await daily.tick(
+      owner => {
+        const parts = owner.split(':')
+        return (
+          parts.length === 2 &&
+          parts[0] === parts[1] &&
+          config.allowedUsers.has(Number(parts[1]))
+        )
+      },
+      owner => workspaces.get(owner).timezone,
+      owner => experience.isQuiet(owner, workspaces.get(owner).timezone),
+      async owner => {
+        const view = dailyCommands.today(owner)
+        for (const chunk of splitReply(view.text))
+          await bot.telegram.sendMessage(Number(owner.split(':')[0]), chunk, {
+            reply_markup: translateKeyboard(view.keyboard, languageFor(owner))
+          })
+      }
     )
   }
   bot.stopJobs = () => jobs.stop()
@@ -575,6 +610,7 @@ export function createBot({
   })
 
   const help = [
+    '/today — daily dashboard. /morning — optional local morning overview. /scenarios, /favorite, /run — quick workflows. /notes — reviewed voice tasks. /read — article reader. /continue — project context review. /onboarding — guided setup.',
     '/quiet, /digest and /notifications — delivery controls. /bookmarks and /bookmark — saved passages. /sources — cited evidence cards. /project_budget and /project_usage — project estimates. /output — validated CSV/JSON. /queue, /priority and /defer — queued work. /language — UI and answer preferences.',
     'Start here: /guide opens a task-oriented command menu. /tasks, /batch, /glossary, /recap and /import extend your workflow. Images and background work show configured cost estimates before confirmation by default.',
     'Send text, voice, photos or documents (PDF, DOCX, XLSX, PPTX, TXT, MD, CSV, JSON). Captions are instructions; reply to a file/photo to select it. Reference albums are supported.',
@@ -649,6 +685,17 @@ export function createBot({
     const owner = ownerFor(ctx)
     switch (command) {
       case 'start':
+        if (!daily.get(owner).onboarded)
+          await dailyCommands.onboarding(dailyContext(ctx))
+        else {
+          const view = dailyCommands.today(owner)
+          await experienceContext(ctx).text(
+            `${view.text}\n\n/guide opens all workflows; /settings changes preferences.`,
+            view.keyboard,
+            true
+          )
+        }
+        break
       case 'help':
         for (const chunk of splitReply(help)) await uiReply(ctx, chunk)
         await flowCommands.guide(workflowContext(ctx))
@@ -659,6 +706,7 @@ export function createBot({
         productivity.deleteThread(owner, profiles.get(owner).active)
         workflow.deleteThread(owner, profiles.get(owner).active)
         experience.deleteThread(owner, profiles.get(owner).active)
+        daily.deleteThread(owner, profiles.get(owner).active)
         conversations.reset(sessionFor(ctx))
         await uiReply(
           ctx,
@@ -701,6 +749,7 @@ export function createBot({
         productivity.deleteThread(owner, argument)
         workflow.deleteThread(owner, argument)
         experience.deleteThread(owner, argument)
+        daily.deleteThread(owner, argument)
         conversations.reset(`${owner}:${argument}`)
         await uiReply(ctx, 'Conversation and its history deleted.')
         break
@@ -867,6 +916,7 @@ export function createBot({
         library.refresh(owner)
         workflow.refresh(owner)
         experience.refresh(owner)
+        daily.refresh(owner)
         conversations.refresh()
         controls.clear(owner, false)
       }
@@ -949,6 +999,17 @@ export function createBot({
       }
     }
   }
+  const dailyContext = (ctx: Context): DailyContext => {
+    const base = experienceContext(ctx)
+    return {
+      owner: base.owner,
+      thread: base.thread,
+      text: (value, keyboard, raw) => base.text(value, keyboard, raw),
+      prepare: prompt => productivityContext(ctx).prepare(prompt),
+      review: request => advanced.review(productivityContext(ctx), request),
+      article: url => article(url, controls.current(base.owner)!.signal)
+    }
+  }
   const respond = async (
     ctx: Context,
     text: string,
@@ -961,6 +1022,32 @@ export function createBot({
       /^\/(memory|templates|template\s+show|collect\s+show|context\s+show|library\s+find|find)(?:\s|$)/.test(
         text
       )
+    if (!prepared) {
+      const context = dailyContext(ctx)
+      const result =
+        !text.startsWith('/') && !/^https:\/\//i.test(text.trim())
+          ? dailyCommands.pending(
+              context,
+              text || 'Process the attached content.'
+            )
+          : null
+      if (result) {
+        result.images = images
+        result.documents = [...result.documents, ...documents]
+        prepared = result
+        text = result.prompt
+        documents = result.documents
+      } else if (!images.length && !documents.length) {
+        const handled = await dailyCommands.handle(context, text)
+        if (handled === true) return
+        if (handled !== false) {
+          prepared = handled
+          text = handled.prompt
+          images = handled.images
+          documents = handled.documents
+        }
+      }
+    }
     if (!prepared && !images.length && !documents.length) {
       const experienceResult = await experienceCommands.handle(
         experienceContext(ctx),
@@ -1012,13 +1099,15 @@ export function createBot({
           productivity: productivity.get(owner),
           library: library.get(owner),
           workflow: workflow.get(owner),
-          experience: experience.get(owner)
+          experience: experience.get(owner),
+          daily: daily.get(owner)
         }),
         erase: () => {
           productivity.erase(owner)
           library.erase(owner)
           workflow.erase(owner)
           experience.erase(owner)
+          daily.erase(owner)
         },
         deleteProject: (id: string) => {
           library.deleteProject(owner, id)
@@ -1268,8 +1357,35 @@ export function createBot({
       const rememberDelivery = (message: number, text: string) => {
         if (revision) workflow.quote(owner, message, thread, revision, text)
       }
+      if (prepared?.reviewTasks && answer.artifact) {
+        await dailyCommands.taskReview(
+          dailyContext(ctx),
+          Buffer.from(answer.artifact.data, 'base64').toString('utf8')
+        )
+        if (preview !== undefined)
+          await ctx.telegram
+            .editMessageText(
+              ctx.chat!.id,
+              preview,
+              undefined,
+              translate(
+                'Task proposals are ready for review below.',
+                languageFor(owner)
+              )
+            )
+            .catch(() => undefined)
+        return
+      }
       const rawMarkup = controls.buttons(token, answer.images.length > 0)
       if (revision) {
+        rawMarkup.inline_keyboard.push(
+          ...dailyCommands.answerButtons(
+            revision,
+            images.length > 0 || answer.images.length > 0,
+            documents.length > 0,
+            documents.length > 1
+          )
+        )
         rawMarkup.inline_keyboard.push([
           {
             text: 'Save answer',
@@ -1362,6 +1478,29 @@ export function createBot({
   bot.on('callback_query', async ctx => {
     if (!('data' in ctx.callbackQuery)) {
       await ctx.answerCbQuery('Unsupported control.')
+      return
+    }
+    if (
+      ctx.callbackQuery.data.startsWith('daily:') ||
+      ctx.callbackQuery.data.startsWith('act:')
+    ) {
+      const result = ctx.callbackQuery.data.startsWith('act:')
+        ? dailyCommands.action(dailyContext(ctx), ctx.callbackQuery.data)
+        : await dailyCommands.callback(
+            dailyContext(ctx),
+            ctx.callbackQuery.data
+          )
+      await ctx.answerCbQuery()
+      if (result !== true && result !== false) {
+        await respond(
+          ctx,
+          result.prompt,
+          result.images,
+          result.documents,
+          false,
+          result
+        )
+      }
       return
     }
     if (
@@ -1588,7 +1727,17 @@ export function createBot({
       )
     for (const chunk of splitReply(`Transcript: ${text}`))
       await uiReply(ctx, chunk)
-    await respond(ctx, text, [], [], true)
+    const prepared = daily.get(ownerFor(ctx)).notes
+      ? dailyCommands.taskRequest(dailyContext(ctx), text)
+      : undefined
+    await respond(
+      ctx,
+      prepared ? prepared.prompt : text,
+      [],
+      [],
+      true,
+      prepared
+    )
   })
   bot.catch(async (error, ctx) => {
     // SDK/network errors can contain credentials, URLs, prompts, and transcripts.

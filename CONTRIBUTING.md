@@ -22,3 +22,7 @@ Contributions use the existing MIT license. See [security policy](SECURITY.md) f
 ## UI translation resources
 
 English is the source language for code, comments, documentation and commits. Deliberately multilingual values belong only in `src/telegram/locales/messages.json`. Keep Russian/Spanish English-key catalogs and placeholder sets aligned; preserve commands, IDs and quoted/model content. Unknown UI messages fall back to English. Unit tests enforce catalog parity; production builds must include the JSON resources. Add language/control-flow coverage using controlled local doubles, never paid translation/provider calls.
+
+## Daily workflow contracts
+
+New workflow tests remain adjacent unit tests. Mock DNS/HTTPS transport and assert public-address policy, pinned lookup behavior (single/all address forms), redirect/byte/type/cancellation limits and malformed text extraction without live URL requests. Task proposals must remain inert until a bound confirmation; use atomic task-record writes and stable token-derived IDs. Test context-review intent propagation, legacy template syntax, stale callbacks, allowlists and morning attempt-before-effect behavior. Do not add network, browser, native DB, performance or integration qualification to this workflow.

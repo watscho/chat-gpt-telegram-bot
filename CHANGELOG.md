@@ -1,5 +1,19 @@
 # Changelog
 
+## 7.0.0 — Daily workflows
+
+- Replace the initial command wall with guided focus/language setup, explicit sample generation and a free skip path; configured users land on Today.
+- Add answer-bound contextual actions for checklists, risks, reviewed tasks, translations, file comparisons and a studio-background edit through existing cost controls.
+- Add opt-in voice-note summaries/task proposals using strict structured rows, explicit deadline review, atomic task creation and duplicate-safe confirmations.
+- Add local Today dashboards and opt-in timezone-aware morning overviews with quiet hours, persisted delivery claims and bounded transport retries.
+- Add a public HTTPS article reader with validated/pinned DNS, reserved-network rejection, TLS verification, bounded redirects/downloads, cancellation and sequential text extraction; retain readable excerpts for grounded follow-ups.
+- Add favorite/recent built-in scenarios and existing template shortcuts with pagination and expiring owner/thread/revision-bound input prompts; preserve legacy template run syntax.
+- Add inspectable project continuation excerpts/open actions and mandatory context review before generating a next step.
+- Include the new private daily state in exports/erasure, preserve destination settings during archive import, and expand navigation, catalogs, security and operations documentation.
+- Keep only adjacent unit tests, with 245 passing tests and 100% executable source line/branch/function coverage. No live/native/provider, browser, Docker, integration or costly tests qualify this release.
+
+Changed defaults: `/start` now opens onboarding or Today; `/help` retains the full reference. A standalone HTTPS link is an explicit article-read request rather than ordinary chat text. The page host receives an unauthenticated server request, and readable text is sent to the model for summarization under normal quota controls. SQLite stays schema 3; archives stay format 2. Morning delivery and voice-note mode default off. Deployment and live-provider acceptance remain unverified.
+
 ## 6.0.0 — Delivery, evidence and structured results
 
 - Add timezone-aware quiet hours, grouped job/task notification digests, pending-delivery inspection, suppression and bounded delivery-only retries.

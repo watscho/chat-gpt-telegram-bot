@@ -225,3 +225,22 @@ void test('structured specifications survive review while excluded reference pas
   assert.equal(excluded.evidence, undefined)
   assert.equal(excluded.references, '')
 })
+
+void test('task review intent survives the independent context inclusion preview', () => {
+  const data = new Productivity()
+  const draft = data.stage('a', '1', undefined, {
+    prompt: 'Extract tasks',
+    images: [],
+    documents: [],
+    memories: [],
+    instructions: '',
+    history: [],
+    references: '',
+    analysisOnly: true,
+    structured: { format: 'json', fields: ['summary', 'task', 'due'] },
+    reviewTasks: true
+  })
+  const request = data.consume('a', '1', draft.token, undefined)
+  assert.equal(request.reviewTasks, true)
+  assert.equal(request.structured!.format, 'json')
+})
