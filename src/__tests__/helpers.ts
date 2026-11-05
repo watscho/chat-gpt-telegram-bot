@@ -1,5 +1,10 @@
-import { loadConfig } from '../src/config.js'
-import type { LanguageModel, Message } from '../src/domain/conversation.js'
+import { loadConfig } from '../config.js'
+import type {
+  LanguageModel,
+  Message,
+  ModelReply,
+  ReplyOptions
+} from '../domain/conversation.js'
 
 export const config = () =>
   loadConfig({
@@ -10,9 +15,14 @@ export const config = () =>
   })
 export class FakeModel implements LanguageModel {
   calls: Message[][] = []
-  answer = 'Test answer'
+  answer: string | ModelReply = 'Test answer'
+  options: ReplyOptions[] = []
   failure = false
-  reply(messages: readonly Message[]): Promise<string> {
+  reply(
+    messages: readonly Message[],
+    options: ReplyOptions = {}
+  ): Promise<string | ModelReply> {
+    this.options.push(options)
     this.calls.push(structuredClone([...messages]))
     return this.failure
       ? Promise.reject(new Error('secret-token'))

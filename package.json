@@ -1,8 +1,8 @@
 {
   "name": "chat-gpt-telegram-bot",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "A TypeScript Telegram bot with isolated conversations and voice transcription.",
+  "description": "A private TypeScript Telegram assistant with web search, documents, image workflows, durable conversations, managed memory and voice replies.",
   "type": "module",
   "main": "dist/index.js",
   "license": "MIT",
@@ -28,8 +28,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "node --import tsx --test tests/*.test.ts",
-    "test:coverage": "node --import tsx --experimental-test-coverage --test-coverage-lines=90 --test-coverage-branches=90 --test-coverage-functions=85 --test-coverage-include=\"src/**/*.ts\" --test tests/*.test.ts",
+    "test": "node --import tsx --test 'src/**/__tests__/*.test.ts'",
+    "test:coverage": "node --import tsx --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 --test-coverage-include='src/**/*.ts' --test-coverage-exclude='src/**/__tests__/**' --test 'src/**/__tests__/*.test.ts'",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build"
   },
   "dependencies": {

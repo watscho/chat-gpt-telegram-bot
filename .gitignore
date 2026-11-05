@@ -8,3 +8,6 @@ coverage/
 .DS_Store
 voices/
 public/
+data/
+*.sqlite
+*.sqlite-*

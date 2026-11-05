@@ -1,6 +1,8 @@
 import OpenAI from 'openai'
 import { ConfigurationError, loadConfig } from './config.js'
 import { OpenAIModel } from './infrastructure/openai-model.js'
+import { SQLiteStateStore } from './infrastructure/state-store.js'
+import { RealtimeSpeech } from './infrastructure/realtime-speech.js'
 import { createBot } from './telegram/bot.js'
 
 async function main(): Promise<void> {
@@ -10,7 +12,14 @@ async function main(): Promise<void> {
     timeout: config.requestTimeoutMs,
     maxRetries: 0
   })
-  const bot = createBot({ config, model: new OpenAIModel(client, config) })
+  const store = new SQLiteStateStore(config.statePath)
+  const bot = createBot({
+    config,
+    model: new OpenAIModel(client, config),
+    store,
+    speech: new RealtimeSpeech(client, config)
+  })
+  process.once('exit', () => store.close())
   let stopping = false
   const shutdown = (signal: string): void => {
     if (stopping) return

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { downloadTelegramAudio } from '../src/infrastructure/telegram-audio.js'
+import { downloadTelegramFile as downloadTelegramAudio } from '../telegram-file.js'
 const url = new URL('https://api.telegram.org/file/bot123/voice.oga')
 const fetcher =
   (response: Response): typeof fetch =>
@@ -90,4 +90,21 @@ void test('HTTP errors cancel the body without buffering the error response', as
     )
   )
   assert.equal(cancelled, true)
+})
+
+void test('HTTP error cleanup tolerates a failed body cancellation', async () => {
+  const body = new ReadableStream({
+    cancel() {
+      return Promise.reject(new Error('cancel failed'))
+    }
+  })
+  await assert.rejects(
+    downloadTelegramAudio(
+      url,
+      10,
+      1000,
+      fetcher(new Response(body, { status: 500 }))
+    ),
+    /download failed/
+  )
 })

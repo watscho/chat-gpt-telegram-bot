@@ -1,123 +1,113 @@
-# ChatGPT Telegram Bot
+# Telegram AI Bot Pro
 
-A private Telegram bot for text conversations and voice transcription, written in strict TypeScript. Uses the OpenAI Responses and audio transcription APIs. MIT licensed.
+A private TypeScript Telegram assistant with text and voice conversations, photo analysis and editing, image generation, web search with sources, document questions, named conversations and explicit saved memory. MIT licensed.
 
-## Requirements and setup
+“Pro” names this repository's feature set. It does not grant a ChatGPT subscription or provider account access.
 
-- Node.js 26.13 or newer within the Node 26 release line (`nvm use`).
-- npm 11; npm is the sole package manager. The old Yarn 1 lockfile has been replaced by `package-lock.json`.
-- A Telegram bot token from [@BotFather](https://t.me/BotFather).
-- An OpenAI project API key, API billing, and access to the configured models.
+## Get started
+
+Requirements: Node.js **26.13+ within Node 26**, npm 11, a Telegram bot token, an OpenAI project API key with billing and model access. Outgoing voice messages require **FFmpeg with libopus**; the Docker image includes it. Incoming voice transcription needs no FFmpeg.
 
 ```sh
+nvm use
 npm ci
 cp .env.example .env
+# Fill in required settings before starting.
+npm run dev
 ```
 
-Fill in `TELEGRAM_API_KEY`, `OPENAI_API_KEY`, `OPENAI_CHAT_MODEL`, and `ALLOWED_TELEGRAM_USER_IDS`. Model IDs are configurable; select a Responses-compatible text model available to your project. The default transcription model is `gpt-4o-mini-transcribe`. Never commit `.env`.
+Required settings:
 
-Only private chats from the listed numeric user IDs are processed. All other updates are ignored before accessing OpenAI. There is intentionally no public-access switch.
+- `TELEGRAM_API_KEY`: token from [@BotFather](https://t.me/BotFather).
+- `OPENAI_API_KEY`: private OpenAI project key.
+- `OPENAI_CHAT_MODEL`: a Responses model supporting vision, document inputs, `web_search` and `image_generation`.
+- `ALLOWED_TELEGRAM_USER_IDS`: comma-separated numeric IDs. Only these users in private chats are processed.
+
+Default image model: `gpt-image-2.5-sunburst`, quality `high`. Default outgoing speech model: `gpt-realtime-2.1-mini`, voice `marin`. Model availability must be checked against your own account. Configuration does not establish provider acceptance.
+
+For FFmpeg on macOS, install with `brew install ffmpeg`; on Debian/Ubuntu, install the `ffmpeg` package. Check that your build supports the `libopus` encoder. `FFMPEG_PATH` can point to a trusted executable.
 
 ```sh
-npm run dev       # watch TypeScript sources, read .env
-npm run build     # clean dist and compile production JavaScript
-npm start         # run compiled JavaScript, read .env if present
+npm run build
+npm start
 ```
 
-`npm run watch` is an alias for `dev`. Production environment variables can be injected directly; no `.env` file is required. A build never copies credentials.
+## Commands
 
-## Bot behavior
+| Command                                  | Behavior                                                                        |
+| ---------------------------------------- | ------------------------------------------------------------------------------- |
+| `/start`, `/help`                        | Show help without clearing history                                              |
+| `/new [name]`                            | Create and select an independent conversation                                   |
+| `/chats`                                 | List your conversations and selected ID                                         |
+| `/switch id`                             | Continue another conversation                                                   |
+| `/rename name`                           | Rename the selected conversation                                                |
+| `/delete id`                             | Delete that conversation and its retained history; keep at least one            |
+| `/reset`                                 | Clear selected conversation's text, photos and documents                        |
+| `/search query`                          | Explicit web search with numbered references and clickable sources              |
+| `/image description`                     | Generate a new image                                                            |
+| `/edit instructions`                     | Edit images in context, or a photo/file you reply to                            |
+| `/remember note`                         | Explicitly save a note shared across your conversations                         |
+| `/memory`                                | List saved notes with numbers                                                   |
+| `/forget number`, `/forget all`          | Remove a note or all saved notes; exact note text also works                    |
+| `/voice off`, `/voice on`, `/voice auto` | Disable voice, narrate all text answers, or narrate only answers to voice input |
+| `/speak [text]`                          | Narrate supplied text, or the last retained assistant answer                    |
 
-- Send text or a Telegram voice message.
-- `/start`, `/new`, `/reset`: discard your conversation.
-- `/help`: display usage and data-processing information.
-- Requests for the same user/chat run one at a time. Overlapping requests, including resets, receive a busy response; they are not queued.
-- Global concurrency, input length, output tokens, audio size and duration are bounded.
-- Long replies are sent as plain-text chunks within Telegram limits, preserving Unicode surrogate pairs.
-- Failed or incomplete OpenAI responses do not add partial turns to history.
-- OGG audio goes directly to transcription: no FFmpeg, subprocesses, disk downloads, or temporary files.
+Voice replies start **off**. Every outgoing voice message is labelled **AI-generated voice**. Text answers remain available even if narration fails. Long answers are not silently truncated for speech: use `/speak` with a shorter passage.
 
-## Configuration
+Natural-language requests can invoke image generation or web search automatically. Explicit commands provide a predictable way to request them. `запомни: …`, `remember …`, `забудь …` and `forget …` manage saved notes without a model call. The bot never extracts long-term notes automatically from ordinary conversation.
 
-See [.env.example](.env.example) for all settings. Missing credentials, an empty user allowlist, invalid IDs, and invalid numeric limits fail at startup. Values are never included in configuration errors.
+## Photos and documents
 
-| Setting                      | Default                  | Purpose                                      |
-| ---------------------------- | ------------------------ | -------------------------------------------- |
-| `OPENAI_CHAT_MODEL`          | Required                 | Responses-compatible model ID                |
-| `OPENAI_TRANSCRIPTION_MODEL` | `gpt-4o-mini-transcribe` | OGG-compatible transcription model           |
-| `ALLOWED_TELEGRAM_USER_IDS`  | Required                 | Comma-separated user allowlist               |
-| `MAX_INPUT_CHARACTERS`       | 8000                     | Text/transcript limit in UTF-16 code units   |
-| `MAX_HISTORY_TURNS`          | 20                       | Complete user/assistant pairs per session    |
-| `MAX_HISTORY_CHARACTERS`     | 60000                    | Retained history budget in UTF-16 code units |
-| `SESSION_TTL_SECONDS`        | 3600                     | History inactivity lifetime                  |
-| `MAX_SESSIONS`               | 1000                     | Maximum retained sessions                    |
-| `MAX_CONCURRENT_REQUESTS`    | 10                       | Global in-flight update limit                |
-| `MAX_VOICE_BYTES`            | 10000000                 | Both declared and actual audio bytes checked |
-| `MAX_VOICE_SECONDS`          | 300                      | Maximum Telegram-declared duration           |
-| `OPENAI_MAX_OUTPUT_TOKENS`   | 2000                     | Output-token budget per response             |
-| `REQUEST_TIMEOUT_MS`         | 60000                    | Per OpenAI request/audio download timeout    |
+Send a photo or original JPEG/PNG/static WebP file, with optional instructions in its caption. Continue asking questions about it. `/image`, `/edit` and `/search` also work in captions. Reply to an older photo or document to attach that exact source to the current request. Generated images arrive as original PNG documents.
 
-History is process-local, bounded, and lost on restart. Expired entries are pruned when the next conversation request arrives. At capacity, the least recently completed session is evicted. Complete turns are trimmed from the beginning to stay within history limits; an oversized answer can cause its whole turn to be discarded. Input limits still apply to the current message. Limits are not an exact tokenizer-based context calculation.
+Supported document extensions: **PDF, DOCX, XLSX, PPTX, TXT, MD, CSV, JSON**. Send a document with a question, or without a caption for a summary. Follow-up questions reuse retained files. PDFs and Office files are parsed by OpenAI; text documents must be UTF-8. Signatures catch obvious PDF/Office/image mismatches; complete file validity and provider parsing are checked downstream. Embedded pictures/layout in non-PDF documents are not guaranteed to be available to the model. Convert to PDF when visual layout matters.
 
-## Architecture
+Reference albums collect up to ten updates during a 750 ms window and share one download deadline. Items arriving later receive the usual busy response if processing has begun. Send files separately and wait for each reply when predictable batch membership matters.
+
+Examples:
 
 ```text
-src/
-  index.ts                       # composition and process lifecycle
-  config.ts                      # validated environment boundary
-  domain/conversation.ts         # messages and model port
-  application/conversations.ts   # history, retention, complete-turn commits
-  infrastructure/openai-model.ts       # OpenAI SDK adapter
-  infrastructure/telegram-audio.ts # bounded HTTPS audio download
-  telegram/bot.ts                 # access control, concurrency, update handlers
+[photo] Read this sign and translate it into Russian.
+/image A realistic cat portrait in a spacesuit, square composition
+[reply to that image] /edit Replace the background with a beach
+[PDF] Summarize the obligations and point to the relevant pages.
+[follow-up] What does section 4 say?
+/search What changed in the latest Node.js release?
+/new Work
+/remember Answer concisely in Russian.
+/voice auto
 ```
 
-The application depends on a small model interface. SDK and Telegram types stay at infrastructure boundaries. Factories and constructors receive dependencies explicitly; importing application modules does not start polling or read credentials.
+## Data and limits
 
-## Quality checks
+Production state is saved to `STATE_DB_PATH` (default `./data/bot.sqlite`). **Text history, images, documents, conversation names, saved notes and voice preferences are private local data.** Keep this file out of source control and use a persistent Docker volume. `:memory:` selects disposable state. Tests inject isolated stores and do not open your production database.
+
+Saved conversation names, notes and voice settings survive restarts. Retained message history and attachments also survive restarts **within TTL and capacity limits**. History defaults to one hour of inactivity and 20 complete turns per conversation. Expired histories are pruned at startup and on subsequent conversation access; names and explicit notes are retained separately. `/reset` preserves other conversations and saved notes. `/forget` removes saved notes but cannot erase earlier text containing the same information; clear affected conversations too when needed.
+
+Per-user concurrency is serialized across all their conversations. Overlapping updates and commands receive a busy response rather than being queued. Provider failures do not commit partial turns. Successful complete-turn writes and capacity evictions are transactional in SQLite. Text and media have bounded request/history budgets. These are resource limits, not monetary quotas.
+
+Text, audio, attached files, saved notes and relevant history are sent to OpenAI for requested processing. Search may send generated queries to search providers. Responses use `store: false`; this does not establish zero retention by OpenAI or Telegram. Requests and raw provider exceptions are not logged. The SQLite file is access-restricted but is **not encrypted at rest** by this application.
+
+## Development and tests
 
 ```sh
-npm run check          # typecheck, lint, formatting, tests, build
-npm run test:coverage  # native Node.js coverage report
-npm audit              # inspect known dependency advisories
+npm run check          # types, lint, formatting, offline tests and production build
+npm run test:coverage  # require 100% lines, branches and functions across executable src
+npm audit              # dependency advisory check
 ```
 
-Tests use Node's test runner, fake language models, the real Telegraf update pipeline with intercepted transport, and the real OpenAI SDK with a fake HTTP transport. They cover access control, concurrent updates, history isolation/expiry/eviction, reset, provider failures, response chunking, audio bounds, SDK request contracts, startup failures, and SIGINT/SIGTERM during startup and polling. Coverage measures exercised code paths and does not establish live provider compatibility. They do not spend API credits or contact Telegram.
+Tests live beside their implementation in `__tests__`, for example `src/telegram/__tests__/bot.test.ts`. Shared helpers and process fixtures live in `src/__tests__`. Production compilation excludes every `__tests__` directory. Coverage excludes test files and fixtures only; production code has no coverage-ignore annotations.
 
-TypeScript remains on 6.0.3 because the current typescript-eslint release supports TypeScript below 6.1. Node types match the supported Node 26 runtime. The `minimatch` override pins 11.0.4 to address [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) in the lint dependency tree; remove it once upstream ranges accept a patched version.
+The suite covers application behavior, the real Telegraf pipeline with fake transport, actual OpenAI SDK HTTP/WebSocket contracts with fake transport, SQLite durability/transactions, native FFmpeg encoding and process shutdown. Tests require no real API keys and spend no API credits. Full offline coverage does not prove live model/account compatibility, speech fidelity or deployment readiness.
 
-CI runs a clean installation and all checks. Dependabot opens weekly dependency updates. Review model/API changes and lockfile diffs before merging updates.
+CI installs FFmpeg, runs checks and the 100% coverage gate, audits dependencies and builds Docker. npm is the sole package manager; commit lockfile changes with dependency changes.
 
-## Operations and privacy
+## Documentation
 
-Run exactly **one polling instance per bot token**. Deploying multiple replicas creates Telegram polling conflicts and separate histories. Use `SIGINT` or `SIGTERM` for shutdown; in-flight requests have a bounded shutdown window. Pending Telegram updates are dropped at startup to avoid processing stale messages and unexpected API charges.
+- [Руководство пользователя на русском](docs/USER_GUIDE.ru.md)
+- [Configuration reference](docs/configuration.md)
+- [Operations, Docker, backups and live verification](docs/operations.md)
+- [Architecture and test conventions](docs/architecture.md)
+- [Changelog](CHANGELOG.md), [contributing](CONTRIBUTING.md), [security](SECURITY.md), [license](LICENSE)
 
-```sh
-docker build -t chat-gpt-telegram-bot .
-docker run --rm --init --env-file .env chat-gpt-telegram-bot
-```
-
-The container runs as an unprivileged user. No inbound port, database, persistent volume, or web server is required. Stop with a grace period of at least 15 seconds.
-
-User text, retained conversation context, and audio are transmitted to OpenAI. Transcripts are returned to the Telegram chat. `store: false` disables Responses storage for retrieval; it is not a promise of zero retention by either provider. The application does not log message content, credentials, transcripts, or raw provider errors. Generic failure logs intentionally omit details that can contain bot tokens.
-
-Set provider spending limits and monitor billing. Concurrency and per-request limits are not monetary quotas or per-user rate limits. The allowlist is intended for a trusted private bot. Durable history, multi-replica coordination, daily spending quotas, and webhook hosting require separate storage and deployment design.
-
-For a manual live check, use a dedicated bot and account: start the bot, send text and voice, verify `/reset`, and verify an unlisted account gets no response. Automated checks cannot establish live account access, billing, model availability, or Telegram connectivity.
-
-## Migration from 1.x
-
-- Node 19/CommonJS → Node 26/ES modules.
-- OpenAI SDK 3 → current SDK and Responses API; `OPENAI_CHAT_MODEL` is now required.
-- Add the required `ALLOWED_TELEGRAM_USER_IDS` allowlist.
-- Replace Yarn commands with npm and run `npm ci`.
-- Production entrypoint is `dist/index.js`; run `npm run build` before `npm start`.
-- `APP_PORT` and `APP_URL` are removed (this bot has no HTTP server).
-- FFmpeg dependencies and the 30-second voice truncation are removed. Limits reject oversized voice messages explicitly.
-- Previous unbounded/shared session behavior is replaced by isolated, bounded histories.
-
-## Contributing and license
-
-See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and [LICENSE](LICENSE). Existing MIT terms and the original copyright notice are preserved.
-
-API references: [Responses](https://developers.openai.com/api/reference/resources/responses/methods/create), [audio transcription and supported formats](https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create), [Telegram Bot API](https://core.telegram.org/bots/api).
+Official API references: [web search](https://developers.openai.com/api/docs/guides/tools-web-search), [image generation](https://developers.openai.com/api/docs/guides/tools-image-generation), [file inputs](https://developers.openai.com/api/docs/guides/file-inputs), [Realtime audio](https://developers.openai.com/api/docs/guides/realtime-conversations), [Telegram Bot API](https://core.telegram.org/bots/api).

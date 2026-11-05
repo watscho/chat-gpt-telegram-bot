@@ -4,7 +4,7 @@ import { fork } from 'node:child_process'
 import { once } from 'node:events'
 
 function start(mode: string, credentials = true) {
-  const child = fork(new URL('../src/index.ts', import.meta.url), [], {
+  const child = fork(new URL('../index.ts', import.meta.url), [], {
     execArgv: [
       '--import',
       'tsx',
@@ -15,6 +15,7 @@ function start(mode: string, credentials = true) {
     env: {
       PATH: process.env.PATH,
       RUNTIME_TEST_MODE: mode,
+      STATE_DB_PATH: ':memory:',
       ...(credentials
         ? {
             TELEGRAM_API_KEY: '123456:test-secret',
@@ -88,4 +89,26 @@ for (const mode of ['startup', 'polling']) {
       }
     )
   }
+}
+
+for (const mode of ['shutdown-ok', 'shutdown-failure']) {
+  void test(
+    `shutdown deadline terminates stuck polling and tolerates repeated signals: ${mode}`,
+    { timeout: 10000 },
+    async t => {
+      const app = start(mode)
+      t.after(() => {
+        app.child.kill('SIGKILL')
+      })
+      const [ready] = await (once(app.child, 'message') as Promise<[unknown]>)
+      assert.equal(ready, mode)
+      const stopped = once(app.child, 'message') as Promise<[unknown]>
+      app.child.kill('SIGTERM')
+      assert.equal((await stopped)[0], 'stopping')
+      app.child.kill('SIGINT')
+      const [code, signal] = await app.exited
+      assert.equal(code, mode === 'shutdown-failure' ? 1 : 0)
+      assert.equal(signal, null)
+    }
+  )
 }

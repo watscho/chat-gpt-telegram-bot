@@ -8,3 +8,7 @@ coverage
 *.log
 voices
 public
+
+data
+*.sqlite
+*.sqlite-*
