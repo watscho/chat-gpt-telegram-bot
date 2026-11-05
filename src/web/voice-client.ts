@@ -1,3 +1,4 @@
+import { captureVisual } from './visual-capture.js'
 import { VoiceController, type VoiceState } from './live-controller.js'
 interface TelegramApp {
   initData: string
@@ -88,7 +89,60 @@ export function mountVoice(
     error.textContent = state.error
     error.hidden = !state.error
   }
+  const visual = document.getElementById('visual'),
+    visualReview = document.getElementById('visual-review'),
+    actionReview = document.getElementById('action-review')
+  let frame: string | null = null,
+    sendingFrame = false
+  const control = (parent: HTMLElement, label: string, run: () => void) => {
+    const button = document.createElement('button')
+    button.textContent = label
+    button.addEventListener('click', run)
+    parent.append(button)
+  }
+  const problem = () => {
+    error.textContent =
+      'Unable to prepare or send this review. Inspect the active session and try again explicitly.'
+    error.hidden = false
+  }
   const controller = new VoiceController({
+    action: async (id, call, args) => {
+      if (!actionReview)
+        throw new Error('Voice action controls are unavailable.')
+      const pending = await request('live/action', { id, call, args })
+      if (controller.session() !== id) return
+      if (
+        typeof pending.token !== 'string' ||
+        typeof pending.revision !== 'number' ||
+        typeof pending.value !== 'string'
+      )
+        throw new Error('Invalid voice proposal.')
+      actionReview.replaceChildren()
+      const proposal = document.createElement('p')
+      proposal.textContent = pending.value
+      actionReview.append(proposal)
+      for (const confirm of [true, false])
+        control(
+          actionReview,
+          confirm ? 'Confirm exact action' : 'Cancel action',
+          () => {
+            void request('live/confirm', {
+              id,
+              token: pending.token,
+              revision: pending.revision,
+              confirm
+            })
+              .then(result => {
+                if (typeof result.output !== 'string')
+                  throw new Error('Invalid tool result.')
+                controller.toolResult(call, result.output)
+                proposal.textContent = result.output
+                actionReview.replaceChildren(proposal)
+              })
+              .catch(problem)
+          }
+        )
+    },
     media: () => navigator.mediaDevices.getUserMedia({ audio: true }),
     peer: () => new RTCPeerConnection(),
     offer: async (sdp, mode) => {
@@ -128,15 +182,67 @@ export function mountVoice(
     every: callback => setInterval(callback, 1000),
     cancel: timer => clearInterval(timer as ReturnType<typeof setInterval>)
   })
+  if (visual && visualReview) {
+    for (const kind of ['camera', 'screen'] as const)
+      control(
+        visual,
+        kind === 'camera' ? 'Capture camera frame' : 'Capture screen frame',
+        () => {
+          void captureVisual(kind, navigator.mediaDevices, document)
+            .then(image => {
+              frame = image
+              visualReview.replaceChildren()
+              const preview = document.createElement('img')
+              preview.src = image
+              preview.alt = 'Selected visual frame; inspect before sending'
+              preview.style.maxWidth = '100%'
+              visualReview.append(preview)
+              control(visualReview, 'Send this frame (uses API quota)', () => {
+                if (sendingFrame) return
+                const id = controller.session()
+                if (!id || !frame) {
+                  problem()
+                  return
+                }
+                sendingFrame = true
+                const selected = frame
+                void request('live/frame', { id })
+                  .then(() => {
+                    if (controller.session() !== id)
+                      throw new Error('Live session changed.')
+                    controller.frame(selected)
+                    frame = null
+                    visualReview.replaceChildren()
+                  })
+                  .catch(problem)
+                  .finally(() => {
+                    sendingFrame = false
+                  })
+              })
+              control(visualReview, 'Discard frame', () => {
+                frame = null
+                visualReview.replaceChildren()
+              })
+            })
+            .catch(problem)
+        }
+      )
+  }
   start.addEventListener('click', () => {
     void controller.start(mode.value)
   })
   stop.addEventListener('click', () => {
+    frame = null
+    visualReview?.replaceChildren()
+    actionReview?.replaceChildren()
     void controller.stop()
   })
   mute.addEventListener('click', () => controller.mute())
   interrupt.addEventListener('click', () => controller.interrupt())
   window.addEventListener('pagehide', () => {
+    frame = null
+    visualReview?.replaceChildren()
+    actionReview?.replaceChildren()
     void controller.stop()
   })
   if (!initData) {

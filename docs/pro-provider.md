@@ -1,6 +1,6 @@
 # Provider workbench
 
-Current release: **11.0.0**.
+Current release: **12.0.0**.
 
 The provider workbench supports five opt-in workflows to the existing private bot. `/pro` is the entry point. Pro names repository features; API billing, model access, MCP accounts and public HTTPS hosting are separate operator responsibilities. Startup does not verify provider acceptance.
 
@@ -32,7 +32,7 @@ Use a persistent `STATE_DB_PATH` (not `:memory:`). The normal composition suppli
 OPENAI_MCP_CONNECTIONS='[{"id":"mail","owner":123456789,"title":"Work mail","server":"https://mcp.example.com/mcp","tools":["search_messages"],"authorization":"REPLACE_WITH_SERVER_AUTHORIZATION_VALUE"}]'
 ```
 
-The endpoint must be public HTTPS, without credentials, query strings, fragments, custom ports or IP-literal/local-looking hostnames. OpenAI connects to that operator-selected endpoint; this is not the public article reader's DNS-pinned fetch path. Supply the authorization value expected by that MCP server through protected environment/secret management. Never send tokens in Telegram or commit them. Restart after changes. Gmail, Calendar and Drive require an appropriate authenticated MCP server and its account setup; this release does not provide a built-in Google OAuth/login flow or automatic service discovery. Tool names must match that server's schema. Legacy `connector_id` is deliberately unused.
+The endpoint must be public HTTPS, without credentials, query strings, fragments, custom ports or IP-literal/local-looking hostnames. OpenAI connects to that operator-selected endpoint; this is not the public article reader's DNS-pinned fetch path. Supply the authorization value expected by that MCP server through protected environment/secret management. Never send tokens in Telegram or commit them. Restart after changes. Gmail, Calendar and Drive require an appropriate authenticated MCP server and its account setup; the generic connection center supports explicitly configured OAuth authorization-code/PKCE providers, but does not provision Google clients, Google-specific adapters or automatic service discovery. See [connection authorization](pro-desk.md#connections-and-authorization). Tool names must match that server's schema. Legacy `connector_id` is deliberately unused.
 
 ### Live voice Mini App
 
@@ -41,7 +41,7 @@ The endpoint must be public HTTPS, without credentials, query strings, fragments
 3. Publish that exact path and its static/API children through an HTTPS reverse proxy to `127.0.0.1:8787`. Preserve paths, JSON bodies and `X-Telegram-Init-Data`. Do not log request headers/bodies. The Node server intentionally binds to loopback.
 4. Restart the bot, use `/live` in its private chat, then open the Telegram Web App button. Ordinary browser visits cannot authorize paid access.
 
-The Mini App validates signed Telegram `initData`, age and allowlist server-side; it never receives the OpenAI key. Microphone access starts only on Start. The server creates the WebRTC call with fixed model/voice, no tools and no supplied Telegram history, files or notes. Modes are conversation, language practice and interview rehearsal. The visible interface is English; conversation answer language follows the selected chat preference. Transcript events, when supplied, remain on the current screen and are capped at 40 elements. Audio/transcripts are still processed by OpenAI; browser-only display does not imply provider non-retention.
+The Mini App validates signed Telegram `initData`, age and allowlist server-side; it never receives the OpenAI key. Microphone access starts only on Start. The server creates the WebRTC call with fixed model/voice and no automatically supplied Telegram history, files or notes. A review-staging function can propose local task/search/draft actions, and explicit camera/screen frames can be previewed and sent separately; see [visual live voice and action limits](pro-desk.md#visual-live-voice-and-reviewed-actions). Modes are conversation, language practice and interview rehearsal. The visible interface is English; conversation answer language follows the selected chat preference. Transcript events, when supplied, remain on the current screen and are capped at 40 elements. Audio/transcripts are still processed by OpenAI; browser-only display does not imply provider non-retention.
 
 Ending stops browser tracks and requests provider hangup. A server-owned deadline and durable call journal request cleanup after timeout/restart; only one active or uncertain call per owner is allowed. Provider/network failures can delay hangup, so `LIVE_MAX_SECONDS` and estimates are not guaranteed provider billing caps. Clients with control over their data channel are not a trusted model-configuration boundary. No automatic paid reconnect occurs. `/cloud_cleanup` shows outstanding IDs; `/cloud_cleanup retry` rearms failed/due cleanup without ending an unexpired live call.
 

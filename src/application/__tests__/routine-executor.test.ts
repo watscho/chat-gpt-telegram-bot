@@ -106,6 +106,7 @@ void test('routine executor delegates unchanged missions and guards cancellation
     paid.signal
   )
   assert.equal(paid.model.calls.length, 1)
+  delete paid.mission.input.sources
   paid.compose.routine!.model = null
   await paid.routineExecutor.execute(
     owner,

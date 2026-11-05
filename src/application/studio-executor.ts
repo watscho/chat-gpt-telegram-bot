@@ -36,6 +36,8 @@ export class StudioExecutor {
     step: MissionStep,
     signal: AbortSignal,
     amend?: {
+      browserPolicy?: { origins: string[]; tools: string[] }
+      imageMask?: Image
       model?: string
       structured?: StructuredSpec
       images?: Image[]
@@ -54,7 +56,10 @@ export class StudioExecutor {
       throw new UserError(
         'The source project selection changed. Restore it or create a fresh plan.'
       )
-    if (studioEstimate(this.config, step.kind, step.workflow) !== step.estimate)
+    if (
+      studioEstimate(this.config, step.kind, step.workflow, step.desk) !==
+      step.estimate
+    )
       throw new UserError(
         'Configured estimate changed. Create and review a fresh mission plan.'
       )
@@ -99,7 +104,10 @@ export class StudioExecutor {
       memories: [],
       references: [references, amend?.references].filter(Boolean).join('\n\n'),
       ...(amend?.structured ? { structured: amend.structured } : {}),
-      enableImages: false,
+      enableImages: !!amend?.imageMask,
+      ...(amend?.imageMask
+        ? { imageMask: amend.imageMask, action: 'edit' as const }
+        : {}),
       enableSearch: step.kind === 'search',
       search: step.kind === 'search',
       instructions: [mission.input.instructions, amend?.instructions]
@@ -119,6 +127,9 @@ export class StudioExecutor {
               kind: 'connection',
               project: mission.project,
               connection: step.connection!,
+              ...(amend?.browserPolicy
+                ? { browserPolicy: amend.browserPolicy }
+                : {}),
               ...(step.continuation ? { continuation: step.continuation } : {})
             }
       this.workbench.preflight(
@@ -141,7 +152,7 @@ export class StudioExecutor {
     ]
     const reservation = this.usage.reserve(
       owner,
-      step.kind === 'search' ? 'search' : 'chat',
+      amend?.imageMask ? 'image' : step.kind === 'search' ? 'search' : 'chat',
       false,
       mission.project,
       step.kind === 'analysis'
@@ -167,7 +178,7 @@ export class StudioExecutor {
         )
       reservation.finish(
         result.toolsUsed ?? {
-          images: 0,
+          images: amend?.imageMask ? result.images.length : 0,
           searches: step.kind === 'search' ? 1 : 0
         }
       )

@@ -51,6 +51,7 @@ export interface ModelReply {
 }
 
 export interface ReplyOptions {
+  imageMask?: Image
   workbench?: WorkbenchRequest
   scope?: { owner: string; thread: string; project: string | null }
   structured?: StructuredSpec

@@ -115,7 +115,8 @@ void test('Mini App HTTP routing authenticates owners and bounds requests withou
       },
       async *[Symbol.asyncIterator]() {
         if (raw) yield await Promise.resolve(raw)
-        else if (body !== undefined) yield Buffer.from(JSON.stringify(body))
+        else if (body !== undefined)
+          yield await Promise.resolve(Buffer.from(JSON.stringify(body)))
       }
     }
     await server.handle(
@@ -385,4 +386,136 @@ void test('workspace endpoints share Telegram authentication and expose only own
     )
     assert.equal(r.status, 400)
   }
+})
+void test('signed live actions and OAuth callbacks validate every boundary without opening a socket', async () => {
+  const settings = config()
+  settings.workbench.miniAppURL = 'https://voice.example.com/voice'
+  let denied = false,
+    frames = 0,
+    confirmed = false
+  const backend = {
+    liveStatus: () => ({
+      enabled: true,
+      seconds: 60,
+      estimate: 1,
+      project: null
+    }),
+    openLive: () => Promise.resolve({ id: 'rtc', sdp: 'v=0', expiresAt: 100 }),
+    closeLive: () => Promise.resolve(),
+    oauthCallback: () =>
+      denied ? Promise.reject(new Error('secret')) : Promise.resolve(),
+    liveAction: () => ({ token: 'token', revision: 1, value: 'Exact action' }),
+    liveConfirm: (
+      _owner: string,
+      _id: string,
+      _token: string,
+      _revision: number,
+      confirm: boolean
+    ) => {
+      confirmed = confirm
+      return { output: 'Reviewed result', mission: null }
+    },
+    liveFrame: () => {
+      frames++
+    }
+  }
+  const server = new MiniAppServer(settings, backend),
+    request = async (path: string, body?: unknown, target = server) => {
+      const response = new Response(),
+        req = {
+          url: path,
+          method: body === undefined ? 'GET' : 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-telegram-init-data': signed(settings.telegramToken)
+          },
+          async *[Symbol.asyncIterator]() {
+            if (body !== undefined)
+              yield await Promise.resolve(Buffer.from(JSON.stringify(body)))
+          }
+        }
+      await target.handle(
+        req as unknown as IncomingMessage,
+        response as unknown as ServerResponse
+      )
+      return response
+    }
+  assert.equal(
+    (await request('/voice/oauth/callback?state=x&code=y')).status,
+    200
+  )
+  denied = true
+  assert.equal(
+    (await request('/voice/oauth/callback?state=x&code=y')).status,
+    400
+  )
+  assert.equal(
+    (
+      await request('/voice/api/live/action', {
+        id: 'rtc',
+        call: 'call',
+        args: '{}'
+      })
+    ).status,
+    200
+  )
+  assert.equal(
+    (
+      await request('/voice/api/live/confirm', {
+        id: 'rtc',
+        token: 'token',
+        revision: 1,
+        confirm: true
+      })
+    ).status,
+    200
+  )
+  assert.equal(confirmed, true)
+  assert.equal(
+    (await request('/voice/api/live/frame', { id: 'rtc' })).status,
+    200
+  )
+  assert.equal(frames, 1)
+  for (const [path, body] of [
+    ['action', { id: 1, call: 'x', args: '{}' }],
+    ['action', { id: 'x'.repeat(181), call: 'x', args: '{}' }],
+    ['action', { id: 'rtc', call: 1, args: '{}' }],
+    ['action', { id: 'rtc', call: 'call', args: 1 }],
+    ['action', { id: 'rtc', call: 'call', args: '{}', extra: true }],
+    ['confirm', { id: 'rtc', token: 1, revision: 1, confirm: true }],
+    ['confirm', { id: 'rtc', token: 'token', revision: '1', confirm: true }],
+    ['confirm', { id: 'rtc', token: 'token', revision: 1, confirm: 'true' }],
+    [
+      'confirm',
+      { id: 'rtc', token: 'token', revision: 1, confirm: true, extra: true }
+    ],
+    ['frame', { id: 'rtc', extra: true }]
+  ] as const)
+    assert.equal((await request('/voice/api/live/' + path, body)).status, 400)
+  const unsupported = new MiniAppServer(settings, {
+    liveStatus: backend.liveStatus,
+    openLive: backend.openLive,
+    closeLive: backend.closeLive
+  })
+  assert.equal(
+    (await request('/voice/oauth/callback?state=x', undefined, unsupported))
+      .status,
+    400
+  )
+  for (const [path, body] of [
+    ['action', { id: 'rtc', call: 'call', args: '{}' }],
+    ['confirm', { id: 'rtc', token: 'token', revision: 1, confirm: true }],
+    ['frame', { id: 'rtc' }]
+  ] as const)
+    assert.equal(
+      (await request('/voice/api/live/' + path, body, unsupported)).status,
+      400
+    )
+  for (const file of [
+    'home-panel.js',
+    'desk-panel.js',
+    'table.js',
+    'visual-capture.js'
+  ])
+    assert.equal((await request('/voice/' + file)).status, 200)
 })

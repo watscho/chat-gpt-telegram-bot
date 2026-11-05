@@ -179,3 +179,23 @@ void test('live watchdog and shutdown retain uncertain deletion and tolerate cle
   await stopping.live.stop()
   assert.equal(stopping.live.count, 1)
 })
+void test('live visual frame claims are bounded per owned active call and source scope changes invalidate actions', async () => {
+  const s = setup(),
+    call = await s.live.open('42:42', '1', 'v=0', 'conversation')
+  assert.deepEqual(s.live.scope('42:42', call.id), {
+    thread: '1',
+    project: null
+  })
+  assert.throws(() => s.live.scope('43:43', call.id))
+  assert.throws(() => s.live.scope('42:42', 'missing'))
+  s.live.frame('42:42', call.id)
+  s.live.frame('42:42', call.id)
+  s.live.frame('42:42', call.id)
+  assert.throws(() => s.live.frame('42:42', call.id), /three/)
+  const project = s.ws.create('42:42', 'Changed')
+  s.ws.configure('42:42', '1', { project: project.id })
+  assert.throws(() => s.live.scope('42:42', call.id))
+  await s.live.close('42:42', call.id)
+  assert.throws(() => s.live.scope('42:42', call.id))
+  await s.live.stop()
+})

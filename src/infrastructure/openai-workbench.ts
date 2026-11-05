@@ -1,3 +1,4 @@
+import { browserCall } from '../application/browser-policy.js'
 import { createHash } from 'node:crypto'
 import OpenAI, { toFile } from 'openai'
 import type {
@@ -318,6 +319,10 @@ export class OpenAIWorkbench implements ProviderWorkbench {
     options: ReplyOptions,
     continuation?: string
   ): Promise<ModelReply> {
+    const policy = options.workbench?.browserPolicy
+    const signature = createHash('sha256')
+      .update(JSON.stringify(policy ? { connection, policy } : connection))
+      .digest('hex')
     let input: ResponseInputItem[] = [
       ...messages,
       ...[options.references, options.summary, ...(options.memories ?? [])]
@@ -333,13 +338,14 @@ export class OpenAIWorkbench implements ProviderWorkbench {
         input: ResponseInputItem[]
         output: ModelResponse['output']
       }
-      if (
-        saved.signature !==
-        createHash('sha256').update(JSON.stringify(connection)).digest('hex')
-      )
+      if (saved.signature !== signature)
         throw new UserError(
           'Connection settings changed. Create a fresh external request.'
         )
+      if (policy)
+        for (const item of saved.output)
+          if (item.type === 'mcp_approval_request')
+            browserCall(policy, item.name, item.arguments)
       const output = saved.output.filter(
         item =>
           item.type === 'message' ||
@@ -406,11 +412,11 @@ export class OpenAIWorkbench implements ProviderWorkbench {
       throw new UserError(
         'External service operation failed. Check its authorization; no paid retry was made.'
       )
+    if (policy)
+      for (const call of calls) browserCall(policy, call.name, call.arguments)
     if (calls.length) {
       const serialized = JSON.stringify({
-        signature: createHash('sha256')
-          .update(JSON.stringify(connection))
-          .digest('hex'),
+        signature,
         input,
         output: response.output
       })
@@ -543,8 +549,24 @@ export class OpenAIWorkbench implements ProviderWorkbench {
           model: this.config.workbench.liveModel,
           instructions,
           audio: { output: { voice: this.config.speechVoice } },
-          tools: [],
-          tool_choice: 'none',
+          tools: [
+            {
+              type: 'function',
+              name: 'propose_action',
+              description:
+                'Propose a local task, a search of retained user materials, or a draft-only mission. The user must inspect and confirm the exact proposal before it runs. Never claim it completed before its tool result.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  kind: { type: 'string', enum: ['task', 'find', 'draft'] },
+                  text: { type: 'string' }
+                },
+                required: ['kind', 'text'],
+                additionalProperties: false
+              }
+            }
+          ],
+          tool_choice: 'auto',
           max_output_tokens: 1000,
           tracing: null
         }

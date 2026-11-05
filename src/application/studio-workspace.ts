@@ -1,3 +1,4 @@
+import type { DeskWorkspace } from './desk-workspace.js'
 import type { RoutineHome } from './routine-home.js'
 import type { SuiteWorkspace } from './suite-workspace.js'
 import { sourceList } from './sources.js'
@@ -18,7 +19,8 @@ export class StudioWorkspace {
     private readonly usage: UsageLedger,
     private readonly jobs: Jobs,
     private readonly suite?: SuiteWorkspace,
-    private readonly home?: RoutineHome
+    private readonly home?: RoutineHome,
+    private readonly desk?: DeskWorkspace
   ) {}
   snapshot(owner: string, missionId?: string) {
     const thread = this.profiles.get(owner).active,
@@ -27,6 +29,7 @@ export class StudioWorkspace {
     return {
       suite: this.suite?.snapshot(owner),
       home: this.home?.snapshot(owner),
+      desk: this.desk?.snapshot(owner),
       thread,
       threads: this.profiles.get(owner).threads,
       project: this.ws.thread(owner, thread).project,
@@ -93,7 +96,11 @@ export class StudioWorkspace {
       images: mission.input.images.length,
       steps: mission.steps.map(step => ({
         title: step.title,
-        prompt: step.prompt,
+        prompt:
+          step.prompt +
+          (step.desk
+            ? '\nDesk specification: ' + JSON.stringify(step.desk)
+            : ''),
         state: step.state,
         estimate: step.estimate,
         attempt: step.attempt,
@@ -135,6 +142,12 @@ export class StudioWorkspace {
       throw new UserError('Invalid workspace action.')
     const action = body.action,
       id = body.id
+    if (action.startsWith('desk:')) {
+      if (!this.desk) throw new UserError('Desk is unavailable.')
+      const result = this.snapshot(owner)
+      result.desk = this.desk.action(owner, body)
+      return result
+    }
     if (action.startsWith('home:')) {
       if (!this.home) throw new UserError('Daily home is unavailable.')
       const result = this.snapshot(owner)
@@ -209,6 +222,11 @@ export class StudioWorkspace {
     version: string,
     name: string
   ): Document {
+    if (missionId.startsWith('desk:')) {
+      if (!this.desk) throw new UserError('Desk is unavailable.')
+      const [, kind, id] = missionId.split(':')
+      return this.desk.file(owner, kind!, id!, version)
+    }
     if (missionId.startsWith('team:')) {
       if (!this.suite) throw new UserError('Pro Suite is unavailable.')
       return this.suite.file(owner, missionId.slice(5), version, name)

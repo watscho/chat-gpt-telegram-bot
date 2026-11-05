@@ -6,7 +6,16 @@ import type {
   ReplyOptions
 } from './conversation.js'
 
+export interface OAuthProvider {
+  authorizationURL: string
+  tokenURL: string
+  clientID: string
+  clientSecret?: string
+  scopes: string[]
+}
 export interface Connection {
+  permissionRevision?: number
+  oauth?: OAuthProvider
   id: string
   owner: number
   title: string
@@ -36,7 +45,10 @@ export type WorkbenchRequest = (
   | { kind: 'index' }
   | { kind: 'knowledge' }
   | { kind: 'connection'; connection: string; continuation?: string }
-) & { project: string | null }
+) & {
+  project: string | null
+  browserPolicy?: { origins: string[]; tools: string[] }
+}
 
 export interface ToolApproval {
   connection: string

@@ -1,6 +1,6 @@
 # Telegram AI Bot Pro
 
-Current release: **11.0.0**.
+Current release: **12.0.0**.
 
 A private TypeScript Telegram assistant with text and voice conversations, photo analysis and editing, image generation, web search with sources, document questions, projects, named conversations, explicit saved memory, usage controls, streaming replies and durable background jobs. MIT licensed.
 
@@ -8,9 +8,9 @@ A private TypeScript Telegram assistant with text and voice conversations, photo
 
 ## Complete feature catalog
 
-**130 documented capabilities across 15 areas.** Each row groups related commands and controls into one capability. Expand an area to see its full list, entry points and guide.
+**152 documented capabilities across 16 areas.** Each row groups related commands and controls into one capability. Expand an area to see its full list, entry points and guide.
 
-Start in Telegram with `/start` or `/home`, use `/suite` for reviewed specialized workflows, and open `/workspace` for the project/mission dashboard.
+Start in Telegram with `/start`, `/hub` or `/home`, use `/suite` for reviewed specialized workflows, and open `/workspace` for the project/mission dashboard.
 
 | Area                                                        | Capabilities | Guide                                                     |
 | ----------------------------------------------------------- | -----------: | --------------------------------------------------------- |
@@ -29,7 +29,42 @@ Start in Telegram with `/start` or `/home`, use `/suite` for reviewed specialize
 | [Costs, privacy and data controls](#catalog-controls)       |            9 | [Open guide](docs/USER_GUIDE.md#data-and-limits)          |
 | [Engineering and operations](#catalog-engineering)          |            6 | [Open guide](CONTRIBUTING.md)                             |
 | [Daily routines](#catalog-routines)                         |           14 | [Open guide](docs/pro-routines.md)                        |
-| <a id="catalog-routines"></a>                               |
+| [Personal workspace](#catalog-desk)                         |           22 | [Open guide](docs/pro-desk.md)                            |
+| <a id="catalog-desk"></a>                                   |
+
+<details>
+<summary><strong>Personal workspace · 22 capabilities</strong></summary>
+
+| Capability                      | What you can do                                                                           | Entry point                         |
+| ------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------- |
+| Unified navigation              | Access Ask, Create, My materials, My day and Assistants with visible connection controls. | `/hub`, `/workspace`                |
+| Text/code workspace             | Create and save a scoped plain-text/code document.                                        | `/canvas`, My materials             |
+| Selected passage proposals      | Highlight a passage, request a replacement and inspect exact before/after text.           | `/canvas edit`, editor selection    |
+| Document versions               | Restore/download retained text revisions without another model request.                   | `/canvas restore`, `/canvas export` |
+| Local draft recovery            | Preserve unsaved page-memory drafts through navigation and reject stale overwrite.        | Document editor                     |
+| Personal assistants             | Name an assistant with instructions and a selected model.                                 | `/assistant add`                    |
+| Explicit assistant knowledge    | Copy selected Suite source excerpts into an assistant.                                    | `/assistant sources`                |
+| Assistant tool permissions      | Grant and request selected search, analysis or configured service tools explicitly.       | `/assistant ask`                    |
+| Active assistant selection      | Switch a conversation's assistant with one button or restore normal chat.                 | `/assistant use`, Assistants        |
+| Local table imports             | Review explicit UTF-8 CSV/JSON data without model generation.                             | `/sheet import`                     |
+| Excel-to-table workflow         | Review provider-side extraction before accepting a local interactive table.               | `/sheet analyze`, `/sheet from`     |
+| Editable versioned grids        | Inspect paginated rows, edit exact cells and restore retained snapshots.                  | `/sheet cell`, My materials         |
+| Local filtering and sorting     | Filter rows and select lexical/numeric sort order.                                        | Table controls                      |
+| Interactive bar charts          | Choose label/value columns and chart bounded explicit numeric rows.                       | Table chart controls                |
+| Spreadsheet-safe CSV            | Export a retained table version with formula-leading values neutralized.                  | `/sheet export`                     |
+| Photo projects                  | Retain explicit original images and accepted edit candidates together.                    | `/photos add`                       |
+| Selected-region image edits     | Choose a PNG pixel rectangle and review a paid mask-guided edit.                          | `/photos edit`, photo selection     |
+| Image version selection/export  | Inspect/select and download retained original/candidate versions.                         | My materials, `/photos export`      |
+| Visual live voice               | Explicitly capture, preview and send a bounded camera/screen frame.                       | `/live` Mini App                    |
+| Reviewed voice actions          | Confirm a local task, owned-material search or inert draft mission from a voice proposal. | Live action review                  |
+| Scoped browser recipes          | Prepare isolated MCP browser operations with exact origins/tools and separate approvals.  | `/browser`                          |
+| Connection authorization center | Inspect permissions, use supported OAuth/PKCE and disconnect local access.                | `/services`, Connections            |
+
+[Read the personal workspace guide](docs/pro-desk.md).
+
+</details>
+
+<a id="catalog-routines"></a> |
 
 <details>
 <summary><strong>Daily routines · 14 capabilities</strong></summary>
@@ -534,6 +569,7 @@ The tracked `pre-push` hook installs the exact lockfile without lifecycle script
 
 - [Full feature catalog](#complete-feature-catalog)
 - [User guide](docs/USER_GUIDE.md)
+- [Personal workspace: editor, assistants, tables, photos, live tools and connections](docs/pro-desk.md)
 - [Daily routines: home, planning, finance, recall, replies and reading](docs/pro-routines.md)
 - [Pro Suite: twenty connected workflows](docs/pro-suite.md)
 - [Pro Studio: missions, results and workspace](docs/pro-studio.md)

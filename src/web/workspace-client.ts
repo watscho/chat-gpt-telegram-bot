@@ -1,3 +1,4 @@
+import { renderDesk } from './desk-panel.js'
 import { renderHome } from './home-panel.js'
 import type { WorkspaceView } from '../application/studio-workspace.js'
 export interface WorkspaceWindow {
@@ -46,6 +47,7 @@ export function mountWorkspace(
     selected: string | undefined,
     alive = true,
     generation = 0
+  const deskDrafts = new Map<string, { revision: number; text: string }>()
   const edits = new Map<string, { revision: number; text: string }>()
   const fail = () => {
     error.hidden = false
@@ -123,6 +125,8 @@ export function mountWorkspace(
     status.textContent = 'Saving…'
     try {
       view = await request(body)
+      if (body.action === 'desk:save' || body.action === 'desk:restore')
+        deskDrafts.delete(String(body.id))
       if (body.action === 'edit' || body.action === 'restore')
         edits.delete(String(body.id))
       if (alive) render(view)
@@ -157,6 +161,7 @@ export function mountWorkspace(
     node.value = current
   }
   const render = (snapshot: WorkspaceView) => {
+    if (section === 'Home' && snapshot.desk) section = 'Ask'
     if (section === 'Home' && !snapshot.home) section = 'Missions'
     title.textContent = section
     status.textContent = 'Updated'
@@ -170,7 +175,18 @@ export function mountWorkspace(
     usage.textContent = `${snapshot.usage.requests} requests today · estimated $${(snapshot.usage.estimatedMicroUsd / 1000000).toFixed(2)}`
     nav.replaceChildren()
     for (const name of [
-      ...(snapshot.home ? ['Home'] : []),
+      ...(snapshot.desk
+        ? [
+            'Ask',
+            'Create',
+            'My materials',
+            'My day',
+            'Assistants',
+            'Connections'
+          ]
+        : snapshot.home
+          ? ['Home']
+          : []),
       'Missions',
       'Inbox',
       'Tasks',
@@ -185,7 +201,28 @@ export function mountWorkspace(
       element.setAttribute('aria-current', String(section === name))
     }
     list.replaceChildren()
-    if (section === 'Home' && snapshot.home)
+    if (
+      snapshot.desk &&
+      ['Ask', 'Create', 'My materials', 'Assistants', 'Connections'].includes(
+        section
+      )
+    )
+      renderDesk(document, list, snapshot.desk, section, {
+        act: body => {
+          void act(body)
+        },
+        inspect: id => {
+          section = 'Missions'
+          void act({ action: 'inspect', id })
+        },
+        download: (id, version, name) => {
+          void download(id, version, name)
+        },
+        confirm: message => window.confirm(message),
+        redraw: () => render(snapshot),
+        drafts: deskDrafts
+      })
+    if ((section === 'Home' || section === 'My day') && snapshot.home)
       renderHome(document, list, snapshot.home, {
         act: body => {
           void act(body)

@@ -19,6 +19,7 @@ export interface VoicePorts {
   now(): number
   every(callback: () => void): unknown
   cancel(timer: unknown): void
+  action?(id: string, call: string, args: string): Promise<void>
 }
 export class VoiceController {
   private generation = 0
@@ -132,6 +133,25 @@ export class VoiceController {
     } catch {
       return
     }
+    if (event.type === 'response.function_call_arguments.done') {
+      if (
+        event.name !== 'propose_action' ||
+        typeof event.call_id !== 'string' ||
+        typeof event.arguments !== 'string' ||
+        !this.id ||
+        !this.ports.action
+      )
+        return
+      void this.ports
+        .action(this.id, event.call_id, event.arguments)
+        .catch(() =>
+          this.update({
+            error:
+              'Unable to prepare the voice action review. No action was authorized.'
+          })
+        )
+      return
+    }
     if (
       event.type === 'response.created' ||
       event.type === 'output_audio_buffer.started'
@@ -158,6 +178,44 @@ export class VoiceController {
         error:
           'The voice service reported an error. End this session before trying again.'
       })
+  }
+  session(): string | null {
+    return this.id
+  }
+  frame(image: string): void {
+    if (
+      !this.id ||
+      this.channel?.readyState !== 'open' ||
+      !image.startsWith('data:image/jpeg;base64,') ||
+      image.length > 1500000
+    )
+      throw new Error('Open a live session and choose a bounded JPEG frame.')
+    this.channel.send(
+      JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_image', image_url: image }]
+        }
+      })
+    )
+    this.channel.send(JSON.stringify({ type: 'response.create' }))
+  }
+  toolResult(call: string, output: string): void {
+    if (
+      !/^[a-zA-Z0-9_-]{1,180}$/.test(call) ||
+      output.length > 16000 ||
+      this.channel?.readyState !== 'open'
+    )
+      throw new Error('The live tool result is no longer valid.')
+    this.channel.send(
+      JSON.stringify({
+        type: 'conversation.item.create',
+        item: { type: 'function_call_output', call_id: call, output }
+      })
+    )
+    this.channel.send(JSON.stringify({ type: 'response.create' }))
   }
   mute(): void {
     if (!this.media) return

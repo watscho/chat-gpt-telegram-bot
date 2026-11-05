@@ -1,6 +1,6 @@
 # Operations
 
-Current release: **11.0.0**.
+Current release: **12.0.0**.
 
 ## Run and store state
 
@@ -129,3 +129,9 @@ Developer setup installs the tracked `.githooks/pre-push` with `npm run hooks:in
 ## Daily routines upgrade
 
 Install the locked XML parser dependency with the application, stop the worker and back up private state first. Schema 3/archive format 2 are retained; owner `routines` records and optional Workflow recovery receipts are new. Restore matching pre-upgrade state/application for rollback. Configure owner-scoped read-only calendar/mail MCP tools, persistent `STATE_PATH`, allowlisted private users, timezone and existing signed `MINI_APP_URL` as needed. Local features need no new provider account. Scheduled public-source reads/reminders need a running worker; source subscriptions and daily reading/recall delivery are explicit user choices. Quiet hours defer claims, while failed notification attempts remain visible for manual review and are not automatically retried. Review [commands, limits and recovery](pro-routines.md) before enabling these workflows. Only unit/static/build verification applies; live/native/hosted deployment acceptance is outside this release scope.
+
+## Personal workspace upgrade
+
+Install locked dependencies and build browser bundles with the application. Back up private state before upgrading; Desk and sealed connection-auth records retain schema 3/archive format 2. Configure a public signed `MINI_APP_URL` for editing/live features. OAuth needs a separately registered provider client, exact callback URL and operator-approved scopes/endpoints; the bot retains access tokens only, and expiry/key rotation requires explicit reauthorization. Local disconnect blocks use and removes the saved token; provider-side revocation is separate. Browser tasks require an isolated MCP driver with origin/network/tool enforcement, not an unconfigured local browser. See [complete setup and limits](pro-desk.md). Only unit/static/build checks qualify this release; actual provider/OAuth/browser/native/deployment acceptance remains separate.
+
+Never log OAuth callback query strings, authorization codes, token exchange bodies or sealed credentials. Treat private state backups and bot-token backups as sensitive.

@@ -544,3 +544,45 @@ void test('structured Responses use a strict field schema and only validated row
     /valid structured JSON/
   )
 })
+void test('image edit adapter supplies the explicit mask as a data image and requires one image operation', async () => {
+  const model = modelWith((_url, init) => {
+    const body = JSON.parse(init!.body as string) as {
+      tools: { type: string; input_image_mask?: { image_url: string } }[]
+      tool_choice: { type: string }
+    }
+    assert.equal(
+      body.tools[0]!.input_image_mask!.image_url,
+      'data:image/png;base64,QQ=='
+    )
+    assert.equal(body.tool_choice.type, 'image_generation')
+    return Promise.resolve(
+      Response.json({
+        status: 'completed',
+        output: [
+          {
+            type: 'image_generation_call',
+            id: 'ig_mask',
+            result: 'iVBORw0KGgo=',
+            status: 'completed'
+          }
+        ]
+      })
+    )
+  })
+  const reply = await model.reply(
+    [
+      {
+        role: 'user',
+        content: 'Edit only the selected region',
+        images: [{ mime: 'image/png', data: 'QQ==' }]
+      }
+    ],
+    {
+      action: 'edit',
+      imageMask: { mime: 'image/png', data: 'QQ==' },
+      enableSearch: false,
+      maxToolCalls: 1
+    }
+  )
+  assert.equal(typeof reply === 'string' ? 0 : reply.images.length, 1)
+})

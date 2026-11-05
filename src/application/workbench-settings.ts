@@ -34,7 +34,7 @@ export function workbenchSettings(
       entry.title.length > 80 ||
       typeof entry.server !== 'string' ||
       typeof entry.authorization !== 'string' ||
-      !entry.authorization ||
+      (!entry.authorization && !entry.oauth) ||
       entry.authorization.length > 8000 ||
       /[\r\n]/.test(entry.authorization) ||
       !Array.isArray(entry.tools) ||
@@ -63,7 +63,50 @@ export function workbenchSettings(
     const key = `${Number(entry.owner)}:${entry.id}`
     if (names.has(key)) throw new Error('Duplicate connection')
     names.add(key)
+    let oauth: import('../domain/workbench.js').OAuthProvider | undefined
+    if (entry.oauth !== undefined) {
+      const value =
+        entry.oauth as import('../domain/workbench.js').OAuthProvider
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        typeof value.clientID !== 'string' ||
+        !value.clientID ||
+        value.clientID.length > 200 ||
+        !Array.isArray(value.scopes) ||
+        value.scopes.length > 20 ||
+        value.scopes.some(
+          scope => typeof scope !== 'string' || !scope || scope.length > 200
+        ) ||
+        (value.clientSecret !== undefined &&
+          (typeof value.clientSecret !== 'string' ||
+            value.clientSecret.length > 4000))
+      )
+        throw new Error('Invalid OAuth settings')
+      for (const address of [value.authorizationURL, value.tokenURL]) {
+        const url = new URL(address)
+        if (
+          url.protocol !== 'https:' ||
+          url.username ||
+          url.password ||
+          url.hash ||
+          url.search ||
+          url.port ||
+          !url.hostname.includes('.') ||
+          /localhost|\.local$|\.internal$|^\[|^[\d.]+$/.test(url.hostname)
+        )
+          throw new Error('Invalid OAuth endpoint')
+      }
+      oauth = {
+        authorizationURL: value.authorizationURL,
+        tokenURL: value.tokenURL,
+        clientID: value.clientID,
+        scopes: [...value.scopes],
+        ...(value.clientSecret ? { clientSecret: value.clientSecret } : {})
+      }
+    }
     return {
+      ...(oauth ? { oauth } : {}),
       id: entry.id,
       owner: Number(entry.owner),
       title: entry.title,

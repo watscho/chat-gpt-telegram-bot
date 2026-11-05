@@ -14,6 +14,17 @@ import { miniAppOwner } from './miniapp-auth.js'
 import { voicePage, voiceStyles } from '../web/voice-page.js'
 
 export interface LiveBackend {
+  oauthCallback?(query: URLSearchParams): Promise<void>
+  liveAction?(owner: string, id: string, call: string, args: string): unknown
+  liveConfirm?(
+    owner: string,
+    id: string,
+    token: string,
+    revision: number,
+    confirm: boolean
+  ): unknown
+  liveFrame?(owner: string, id: string): void
+
   workspace?(owner: string, missionId?: string): WorkspaceView
   workspaceAction?(owner: string, body: Record<string, unknown>): WorkspaceView
   workspaceFile?(
@@ -51,15 +62,24 @@ export class MiniAppServer {
     this.origin = url.origin
     this.base = url.pathname.replace(/\/$/, '')
     this.scripts = Object.fromEntries(
-      ['voice-client.js', 'live-controller.js', 'workspace-client.js'].map(
-        file => [
-          `${this.base}/${file}`,
-          readFileSync(
-            new URL(`../../dist/web/${file}`, import.meta.url),
-            'utf8'
-          )
-        ]
-      )
+      [
+        'voice-client.js',
+        'live-controller.js',
+        'workspace-client.js',
+        'home-panel.js',
+        'desk-panel.js',
+        'table.js',
+        'visual-capture.js'
+      ].map(file => [
+        `${this.base}/${file}`,
+        readFileSync(
+          new URL(
+            `../../dist/${file === 'table.js' ? 'domain/table.js' : 'web/' + file}`,
+            import.meta.url
+          ),
+          'utf8'
+        )
+      ])
     )
     this.server = createServer((request, response) => {
       void this.handle(request, response).catch(() => {
@@ -112,13 +132,37 @@ export class MiniAppServer {
     response.setHeader('Referrer-Policy', 'no-referrer')
     response.setHeader(
       'Permissions-Policy',
-      'microphone=(self), camera=(), geolocation=()'
+      'microphone=(self), camera=(self), display-capture=(self), geolocation=()'
     )
     response.setHeader(
       'Content-Security-Policy',
       "default-src 'none'; script-src 'self' https://telegram.org; style-src 'self'; connect-src 'self'; media-src 'self' blob:; img-src 'self' data:; base-uri 'self'; frame-ancestors https://web.telegram.org https://*.telegram.org; form-action 'none'"
     )
     const path = (request.url ?? '').split('?')[0]!
+    if (request.method === 'GET' && path === `${this.base}/oauth/callback`) {
+      try {
+        if (!this.backend.oauthCallback)
+          throw new UserError('Connection authorization is unavailable.')
+        await this.backend.oauthCallback(
+          new URL(request.url!, 'https://callback.invalid').searchParams
+        )
+        this.send(
+          response,
+          200,
+          'Authorization saved. Return to Telegram and refresh Connections.',
+          'text/plain; charset=utf-8'
+        )
+      } catch {
+        this.send(
+          response,
+          400,
+          'Authorization failed or expired. Start again from Telegram Connections.',
+          'text/plain; charset=utf-8'
+        )
+      }
+      return
+    }
+
     if (
       request.method === 'GET' &&
       (path === this.base || path === `${this.base}/`)
@@ -164,6 +208,12 @@ export class MiniAppServer {
         path === `${this.base}/api/status` && request.method === 'GET',
       offer = path === `${this.base}/api/offer` && request.method === 'POST',
       close = path === `${this.base}/api/close` && request.method === 'POST',
+      liveAction =
+        path === `${this.base}/api/live/action` && request.method === 'POST',
+      liveConfirm =
+        path === `${this.base}/api/live/confirm` && request.method === 'POST',
+      liveFrame =
+        path === `${this.base}/api/live/frame` && request.method === 'POST',
       workspace =
         path === `${this.base}/api/workspace` && request.method === 'GET',
       workspaceFile =
@@ -172,6 +222,9 @@ export class MiniAppServer {
         path === `${this.base}/api/workspace/action` &&
         request.method === 'POST'
     if (
+      !liveAction &&
+      !liveConfirm &&
+      !liveFrame &&
       !status &&
       !offer &&
       !close &&
@@ -195,7 +248,9 @@ export class MiniAppServer {
         this.config.telegramToken,
         this.config.allowedUsers,
         Date.now(),
-        close ? this.config.workbench.liveSeconds + 300 : 300
+        close || liveAction || liveConfirm || liveFrame
+          ? this.config.workbench.liveSeconds + 300
+          : 300
       )
       if (workspace) {
         if (!this.backend.workspace)
@@ -249,7 +304,7 @@ export class MiniAppServer {
       for await (const chunk of request) {
         const bytes = Buffer.from(chunk as Uint8Array)
         length += bytes.length
-        if (length > 120000)
+        if (length > (workspaceAction ? 500000 : 120000))
           throw new UserError('Mini App request exceeds the size limit.')
         chunks.push(bytes)
       }
@@ -266,6 +321,44 @@ export class MiniAppServer {
       if (!value || typeof value !== 'object' || Array.isArray(value))
         throw new UserError('Invalid Mini App request.')
       const body = value as Record<string, unknown>
+      if (liveAction || liveConfirm || liveFrame) {
+        if (typeof body.id !== 'string' || body.id.length > 180)
+          throw new UserError('Invalid live session.')
+        let result: unknown
+        if (liveAction) {
+          if (
+            !this.backend.liveAction ||
+            typeof body.call !== 'string' ||
+            typeof body.args !== 'string' ||
+            Object.keys(body).length !== 3
+          )
+            throw new UserError('Invalid live action fields.')
+          result = this.backend.liveAction(owner, body.id, body.call, body.args)
+        } else if (liveConfirm) {
+          if (
+            !this.backend.liveConfirm ||
+            typeof body.token !== 'string' ||
+            !Number.isSafeInteger(body.revision) ||
+            typeof body.confirm !== 'boolean' ||
+            Object.keys(body).length !== 4
+          )
+            throw new UserError('Invalid live review fields.')
+          result = this.backend.liveConfirm(
+            owner,
+            body.id,
+            body.token,
+            Number(body.revision),
+            body.confirm
+          )
+        } else {
+          if (!this.backend.liveFrame || Object.keys(body).length !== 1)
+            throw new UserError('Visual review is unavailable.')
+          this.backend.liveFrame(owner, body.id)
+          result = { approved: true }
+        }
+        this.send(response, 200, JSON.stringify(result))
+        return
+      }
       if (workspaceAction) {
         if (!this.backend.workspaceAction)
           throw new UserError('Workspace actions are not configured.')

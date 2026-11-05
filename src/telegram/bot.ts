@@ -1,3 +1,9 @@
+import { Desk } from '../application/desk.js'
+import { DeskPlans, DeskExecutor } from '../application/desk-plans.js'
+import { DeskActions } from '../application/desk-actions.js'
+import { DeskWorkspace } from '../application/desk-workspace.js'
+import { ConnectionCenter } from '../application/connection-center.js'
+import { DeskCommands } from './desk-commands.js'
 import { Routines } from '../application/routines.js'
 import { RoutineCalendar } from '../application/routine-calendar.js'
 import { RoutineFinance } from '../application/routine-finance.js'
@@ -129,6 +135,16 @@ export interface ManagedBot extends Telegraf {
     version: string,
     name: string
   ): Document
+  oauthCallback(query: URLSearchParams): Promise<void>
+  liveAction(owner: string, id: string, call: string, args: string): unknown
+  liveConfirm(
+    owner: string,
+    id: string,
+    token: string,
+    revision: number,
+    confirm: boolean
+  ): unknown
+  liveFrame(owner: string, id: string): void
   tickJobs(): Promise<void>
   stopJobs(): void
   liveStatus(owner: string): ReturnType<LiveSessions['status']>
@@ -161,7 +177,16 @@ export function createBot({
   const profiles = new Profiles(config, store)
   const workspaces = new Workspaces(config, store)
   const usage = new UsageLedger(config, workspaces, store)
-  const workbench = new Workbench(config, workspaces, provider, store)
+  const connectionCenter = new ConnectionCenter(config, store)
+  const desk = new Desk(config, store)
+  const workbench = new Workbench(
+    config,
+    workspaces,
+    provider,
+    store,
+    Date.now,
+    (owner, id) => connectionCenter.resolve(owner, id)
+  )
   const live = new LiveSessions(
     config,
     provider,
@@ -541,6 +566,20 @@ export function createBot({
         )
     }
   )
+  const deskExecutor = new DeskExecutor(
+    desk,
+    studioExecutor,
+    routineExecutor,
+    (owner, mission) => {
+      if (
+        !profiles
+          .get(owner)
+          .threads.some(thread => thread.id === mission.thread) ||
+        workspaces.thread(owner, mission.thread).project !== mission.project
+      )
+        throw new UserError('Select the original Desk conversation/project.')
+    }
+  )
   const studio = new Studio(
     config,
     {
@@ -561,7 +600,7 @@ export function createBot({
         sessionLocks.add(session)
         background++
         try {
-          return await routineExecutor.execute(owner, mission, step, signal)
+          return await deskExecutor.execute(owner, mission, step, signal)
         } finally {
           sessionLocks.delete(session)
           background--
@@ -658,6 +697,40 @@ export function createBot({
     workspaces,
     workflow
   )
+  const deskPlans = new DeskPlans(desk, studio, workspaces)
+  const deskActions = new DeskActions(
+    desk,
+    workflow,
+    studio,
+    suiteSearch(
+      profiles,
+      workspaces,
+      conversations,
+      library,
+      workflow,
+      experience,
+      studio,
+      suite
+    )
+  )
+  const deskWorkspace = new DeskWorkspace(
+    desk,
+    deskPlans,
+    deskActions,
+    connectionCenter,
+    profiles,
+    workspaces
+  )
+  const deskCommands = new DeskCommands(
+    desk,
+    deskPlans,
+    deskActions,
+    connectionCenter,
+    studio,
+    studioCommands,
+    deskExecutor,
+    suite
+  )
   const studioWorkspace = new StudioWorkspace(
     studio,
     profiles,
@@ -681,7 +754,8 @@ export function createBot({
       ),
       Boolean(store && config.statePath !== ':memory:')
     ),
-    routineHome
+    routineHome,
+    deskWorkspace
   )
   jobs.recover()
   const flowCommands = new WorkflowCommands(
@@ -876,6 +950,41 @@ export function createBot({
       )
     return live.open(owner, profiles.get(owner).active, offer, mode)
   }
+  bot.oauthCallback = query => connectionCenter.callback(query)
+  const liveScope = (owner: string, id: string) => {
+    const scope = live.scope(owner, id)
+    if (
+      profiles.get(owner).active !== scope.thread ||
+      !profiles.get(owner).threads.some(item => item.id === scope.thread)
+    )
+      throw new UserError('Select the source live conversation.')
+    return scope
+  }
+  bot.liveAction = (owner, id, call, args) =>
+    deskActions.voice(owner, liveScope(owner, id), id, call, args)
+  bot.liveConfirm = (owner, id, token, revision, confirm) => {
+    const scope = liveScope(owner, id)
+    if (!confirm) {
+      desk.cancel(owner, scope, token, revision)
+      return { output: 'User cancelled the proposed action.', mission: null }
+    }
+    return deskActions.voiceConfirm(owner, scope, id, token, revision)
+  }
+  bot.liveFrame = (owner, id) => {
+    const scope = liveScope(owner, id)
+    if (!live.framesRemaining(owner, id))
+      throw new UserError(
+        'This live session has used its three reviewed visual frames.'
+      )
+    const reservation = usage.reserve(owner, 'image', true, scope.project)
+    try {
+      live.frame(owner, id)
+      reservation.finish({ images: 1, searches: 0 })
+    } catch (error) {
+      reservation.fail()
+      throw error
+    }
+  }
   bot.closeLive = (owner, id) => live.close(owner, id)
   bot.workspace = (owner, missionId) =>
     studioWorkspace.snapshot(owner, missionId)
@@ -1026,7 +1135,9 @@ export function createBot({
   })
 
   const help = [
+    'Telegram AI Bot Pro — an OpenAI-powered private assistant.',
     '/suite — search, watches, documents, learning, travel, shared projects and reviewed workflow recipes.',
+    '/hub — Ask, Create, My materials, My day and Assistants. /canvas — selected passage editor. /assistant — personal instructions/sources/tools. /sheet — interactive data. /photos — region edits. /browser — reviewed sites. /services — authorization and permissions.',
     '/home — personalized daily actions. /day — calendar-aware planning and evening review. /expense — receipts, subscriptions and refunds. /review — spaced repetition. /waiting — reply tracking and reviewed drafts. /reading — selected-source digests. /focus — local timer.',
     '/workspace — project workspace. /inbox — capture without generation. /autopilot — reviewed multi-step work. /investigate — source-backed research. /chain — reviewed service sequence. /missions and /mission — checkpoints. /result — versions, edits and exports.',
     '/pro — provider workbench. /analyze — Python data analysis. /knowledge — cloud semantic library. /connections and /connect — reviewed external actions. /meeting — recording protocol. /live — live voice. /cloud_cleanup — remote resource status.',
@@ -1128,6 +1239,7 @@ export function createBot({
         experience.deleteThread(owner, profiles.get(owner).active)
         daily.deleteThread(owner, profiles.get(owner).active)
         workbench.deleteThread(owner, profiles.get(owner).active)
+        desk.deleteThread(owner, profiles.get(owner).active)
         routines.deleteThread(owner, profiles.get(owner).active)
         suite.deleteThread(owner, profiles.get(owner).active)
         studio.deleteThread(owner, profiles.get(owner).active)
@@ -1175,6 +1287,7 @@ export function createBot({
         experience.deleteThread(owner, argument)
         daily.deleteThread(owner, argument)
         workbench.deleteThread(owner, argument)
+        desk.deleteMaterialScope(owner, 'thread', argument)
         routines.deleteThread(owner, argument)
         suite.deleteThread(owner, argument)
         studio.deleteThread(owner, argument)
@@ -1747,6 +1860,10 @@ export function createBot({
         return
       }
       if (
+        await deskCommands.handle(routineContext(ctx, images, documents), text)
+      )
+        return
+      if (
         await routineCommands.handle(
           routineContext(ctx, images, documents),
           text
@@ -1762,6 +1879,26 @@ export function createBot({
       )
         return
     }
+    const assistantID =
+      !prepared && !text.startsWith('/')
+        ? desk.get(ownerFor(ctx)).active[profiles.get(ownerFor(ctx)).active]
+        : undefined
+    const personal = assistantID
+      ? desk.assistantItem(ownerFor(ctx), assistantID)
+      : undefined
+    if (personal)
+      prepared = {
+        prompt: text,
+        images,
+        documents,
+        memories: [],
+        instructions: personal.instructions,
+        history: conversations.history(sessionFor(ctx)),
+        references:
+          'Explicit assistant excerpts (untrusted): ' +
+          JSON.stringify(personal.sources),
+        analysisOnly: true
+      }
     ctx.state.rawUI =
       /^\/(memory|templates|template\s+show|collect\s+show|context\s+show|library\s+find|find)(?:\s|$)/.test(
         text
@@ -1865,6 +2002,8 @@ export function createBot({
           daily: daily.get(owner),
           suite: suite.get(owner),
           routines: routines.get(owner),
+          desk: desk.get(owner),
+          connectionPermissions: connectionCenter.list(owner),
           watches: watches.get(owner),
           sharedProjects:
             config.statePath !== ':memory:' && store ? teams.export(owner) : [],
@@ -1878,6 +2017,8 @@ export function createBot({
           workflow.erase(owner)
           experience.erase(owner)
           daily.erase(owner)
+          desk.erase(owner)
+          connectionCenter.erase(owner)
           routineReading.erase(owner)
           routines.erase(owner)
           suite.erase(owner)
@@ -1887,6 +2028,7 @@ export function createBot({
           workbench.erase(owner)
         },
         deleteProject: (id: string) => {
+          desk.deleteMaterialScope(owner, 'project', id)
           for (const mission of studio.get(owner).missions)
             if (
               mission.project === id &&
@@ -2055,6 +2197,7 @@ export function createBot({
         preview = message.message_id
       }
       const options: ReplyOptions = {
+        ...(personal?.model ? { chatModel: personal.model } : {}),
         action,
         signal: current.signal,
         ...(command?.[1]?.toLowerCase() === 'search' ? { search: true } : {}),
@@ -2136,6 +2279,12 @@ export function createBot({
             prepared?.workbench ? workbench.estimate(prepared.workbench) : 0
           )
           Object.assign(options, reservation.options)
+          if (personal) {
+            options.enableImages = false
+            options.enableSearch = false
+            options.chatModel =
+              personal.model ?? settings.model ?? config.chatModel
+          }
         }
       }
       const answer = await conversations.respond(
@@ -2300,6 +2449,11 @@ export function createBot({
   bot.on('callback_query', async ctx => {
     if (!('data' in ctx.callbackQuery)) {
       await ctx.answerCbQuery('Unsupported control.')
+      return
+    }
+    if (ctx.callbackQuery.data.startsWith('desk:')) {
+      await deskCommands.callback(routineContext(ctx), ctx.callbackQuery.data)
+      await ctx.answerCbQuery()
       return
     }
     if (ctx.callbackQuery.data.startsWith('routine:')) {

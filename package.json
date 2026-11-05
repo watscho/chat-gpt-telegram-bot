@@ -1,8 +1,8 @@
 {
   "name": "chat-gpt-telegram-bot",
-  "version": "11.0.0",
+  "version": "12.0.0",
   "private": true,
-  "description": "A private TypeScript Telegram assistant with projects, streaming, usage controls, documents, image workflows, durable jobs and timezone-aware schedules.",
+  "description": "A private TypeScript Telegram AI workspace with personal assistants, versioned editing, interactive tables, image workflows, live voice, reviewed automations and daily routines.",
   "type": "module",
   "main": "dist/index.js",
   "license": "MIT",
@@ -50,6 +50,7 @@
     "@eslint/js": "10.0.1",
     "@types/node": "26.6.6",
     "@types/pdfkit": "0.17.7",
+    "esbuild": "0.28.2",
     "eslint": "10.14.0",
     "eslint-config-prettier": "10.1.8",
     "globals": "17.14.0",

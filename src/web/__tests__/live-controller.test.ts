@@ -150,3 +150,68 @@ void test('stopping each awaited opening phase rejects stale media, offers, chan
   reject(new Error('late'))
   await start
 })
+void test('live visual/tool events require an active owned session and produce explicit Realtime items without automatic local effects', async () => {
+  const s = voiceSetup(),
+    actions: { id: string; call: string; args: string }[] = []
+  s.ports.action = (id, call, args) => {
+    actions.push({ id, call, args })
+    return Promise.resolve()
+  }
+  const controller = new VoiceController(s.ports)
+  assert.equal(controller.session(), null)
+  assert.throws(() => controller.frame('data:image/jpeg;base64,QQ=='))
+  assert.throws(() => controller.toolResult('call', 'Result'))
+  await controller.start('conversation')
+  s.channel.onopen!()
+  controller.frame('data:image/jpeg;base64,QQ==')
+  assert.match(s.channel.sent.at(-2)!, /input_image/)
+  controller.toolResult('call', 'Explicit result')
+  assert.match(s.channel.sent.at(-2)!, /function_call_output/)
+  for (const event of [
+    {
+      type: 'response.function_call_arguments.done',
+      name: 'other',
+      call_id: 'call',
+      arguments: '{}'
+    },
+    {
+      type: 'response.function_call_arguments.done',
+      name: 'propose_action',
+      call_id: 1,
+      arguments: '{}'
+    },
+    {
+      type: 'response.function_call_arguments.done',
+      name: 'propose_action',
+      call_id: 'call',
+      arguments: 1
+    },
+    {
+      type: 'response.function_call_arguments.done',
+      name: 'propose_action',
+      call_id: 'call',
+      arguments: '{"kind":"task","text":"Review"}'
+    }
+  ])
+    s.channel.onmessage!({ data: JSON.stringify(event) })
+  assert.equal(actions.length, 1)
+  assert.equal(actions[0]!.id, 'rtc1')
+  assert.throws(() => controller.frame('invalid'))
+  assert.throws(() =>
+    controller.frame('data:image/jpeg;base64,' + 'x'.repeat(1500001))
+  )
+  assert.throws(() => controller.toolResult('bad id', 'x'))
+  assert.throws(() => controller.toolResult('call', 'x'.repeat(16001)))
+  s.ports.action = () => Promise.reject(new Error('failed'))
+  s.channel.onmessage!({
+    data: JSON.stringify({
+      type: 'response.function_call_arguments.done',
+      name: 'propose_action',
+      call_id: 'call',
+      arguments: '{}'
+    })
+  })
+  await settle()
+  assert.match(s.states.at(-1)!.error, /No action/)
+  await controller.stop()
+})

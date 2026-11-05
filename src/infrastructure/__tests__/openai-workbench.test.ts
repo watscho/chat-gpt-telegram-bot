@@ -535,8 +535,8 @@ void test('live SDP stays server-authenticated and provider-resource deletion tr
   const session = JSON.parse(
     await (live.get('session') as File).text()
   ) as Record<string, unknown>
-  assert.deepEqual(session.tools, [])
-  assert.equal(session.tool_choice, 'none')
+  assert.equal((session.tools as { name: string }[])[0]!.name, 'propose_action')
+  assert.equal(session.tool_choice, 'auto')
   assert.equal(session.tracing, null)
   s.fixture.location = ''
   await assert.rejects(s.provider.live('v=0', 'Instructions'))
@@ -551,4 +551,61 @@ void test('live SDP stays server-authenticated and provider-resource deletion tr
   await s.provider.remove({ kind: 'file', id: 'missing' })
   s.fixture.failure = 500
   await assert.rejects(s.provider.remove({ kind: 'file', id: 'failed' }))
+})
+void test('browser MCP proposals validate explicit origin/tool on both initial review and stateless continuation', async () => {
+  const s = setup(),
+    connection = {
+      id: 'browser',
+      owner: 42,
+      title: 'Isolated browser',
+      server: 'https://mcp.example.com',
+      authorization: 'protected-token',
+      tools: ['click']
+    },
+    policy = { origins: ['https://example.com'], tools: ['click'] },
+    options = {
+      workbench: {
+        kind: 'connection' as const,
+        connection: 'browser',
+        project: null,
+        browserPolicy: policy
+      }
+    }
+  const call = {
+    type: 'mcp_approval_request',
+    id: 'approval_browser',
+    server_label: 'browser',
+    name: 'click',
+    arguments: '{"origin":"https://example.com","target":"button"}'
+  }
+  s.fixture.response = complete([call])
+  const proposal = await s.provider.connection(
+    connection,
+    [{ role: 'user', content: 'Inspect page' }],
+    options
+  )
+  assert.ok(proposal.approval)
+  s.fixture.response = complete([message('Observed page')])
+  await s.provider.connection(
+    connection,
+    [],
+    options,
+    proposal.approval.continuation
+  )
+  await assert.rejects(
+    s.provider.connection(connection, [], {}, proposal.approval.continuation),
+    /settings changed/
+  )
+  const saved = JSON.parse(proposal.approval.continuation) as {
+    output: { arguments: string }[]
+  }
+  saved.output[0]!.arguments = '{"origin":"https://other.example.com"}'
+  await assert.rejects(
+    s.provider.connection(connection, [], options, JSON.stringify(saved)),
+    /origin/
+  )
+  s.fixture.response = complete([
+    { ...call, arguments: '{"origin":"https://other.example.com"}' }
+  ])
+  await assert.rejects(s.provider.connection(connection, [], options), /origin/)
 })

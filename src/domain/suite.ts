@@ -1,3 +1,4 @@
+import type { DeskSpec } from './desk.js'
 import type { RoutineSpec } from './routine.js'
 import type { Document, Image } from './conversation.js'
 import type { MissionStep } from './studio.js'
@@ -73,6 +74,7 @@ export interface QualityRule {
   check: string
 }
 export interface RecipeStep {
+  desk?: DeskSpec
   routine?: RoutineSpec
   kind: MissionStep['kind']
   title: string

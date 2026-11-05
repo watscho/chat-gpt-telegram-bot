@@ -1,5 +1,20 @@
 # Changelog
 
+## 12.0.0 — Personal workspace
+
+- Add Ask/Create/My materials/My day/Assistants navigation with signed Mini App Desk controls and retained existing mission/project sections.
+- Add versioned plain-text/code documents, source-revision-bound selected edits, exact before/after acceptance, restoration/exports and local unsaved-draft protection.
+- Add named personal assistants with explicit source knowledge, selected models, per-conversation selection and separately granted/reviewed tools.
+- Add bounded CSV/JSON imports, reviewed Excel analysis, paginated editable versioned tables, local filtering/numeric sorting, bar charts and spreadsheet-safe exports.
+- Add scoped photo projects, original PNG rectangle masks, separately accepted image candidates and retained version downloads.
+- Add explicit camera/screen frame previews in live voice and separately confirmed task/search/draft proposals, with scoped call checks and bounded frame quotas.
+- Add isolated MCP browser recipes with reviewed exact origins/tools, nested URL argument checks and policy-bound continuations.
+- Add a connection center with redacted permission state, OAuth authorization-code/S256 PKCE, one-use state, sealed owner-bound tokens, explicit reauthorization and local disconnection.
+- Bundle browser ESM entry points and serve the required static modules; preserve owner lifecycle/export/erase and reject portable reuse of private Desk bindings.
+- Update the complete README catalog to 152 capabilities across 16 areas and provide full English user/operator/lifecycle documentation. Pass 486 adjacent isolated unit tests with 100% executable-source lines, branches and functions, static/build checks and zero npm audit vulnerabilities. Retain the shared pre-push/CI pipeline; no live/native/browser/integration/paid acceptance runs.
+
+Breaking changes: application/dependencies must be upgraded together. Live sessions can propose local actions for separate user review. Existing service continuations may need a fresh request because local permission revisions are now signed into connection state. New Desk/auth records retain schema 3 and archive format 2; imports do not activate source Desk/auth configuration. Back up private state and restore matching pre-upgrade state/application for rollback.
+
 ## 11.0.0 — Daily routines
 
 - Add a personalized Telegram and signed Mini App home with three configurable shortcuts, local overview and focus timer.

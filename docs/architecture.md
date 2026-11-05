@@ -1,6 +1,6 @@
 # Architecture and unit-test conventions
 
-Current release: **11.0.0**.
+Current release: **12.0.0**.
 
 ## Boundaries
 
@@ -119,3 +119,9 @@ Artifact ports compose bounded native ZIP APIs, DOCX/PPTX/PDF adapters, preserve
 `Routines` reads fresh owner `routines` state, validates record/byte limits and persists before publication. Calendar/finance/learning/waiting/reading services implement deterministic local state changes. `RoutinePlans` freezes only explicit selected sources/materials and the conversation model into inert Studio missions. `RoutineExecutor` wraps Suite execution, uses typed model stages and local validation, and prepares expiring owner/conversation/project-bound previews; `RoutineReviews` dispatches separate acceptance. The signed `RoutineHome` adapter shares the same services with Telegram commands and renders through text-only DOM controls.
 
 Calendar evidence has a 15-minute maximum age. Financial arithmetic uses minor-unit strings/BigInt with currency-specific precision. Evening task effects and a recovery receipt are stored together in Workflow before the separate day-close commit. Reading shares pinned public HTTPS transport with articles and validates bounded XML in pure JavaScript. Revision/abort guards prevent late source commits; reminder claims precede transport and uncertain delivery has no automatic retry. Exports include routines, imports do not activate source routine state, and owner erase aborts reading before deletion. See [daily routine lifecycle and limits](pro-routines.md#state-limits-and-operations).
+
+## Personal workspace boundaries
+
+`Desk` owns bounded fresh-read owner state and scoped document/table/photo revisions; `DeskPlans` freezes explicit sources into Studio and `DeskExecutor` separates paid model stages from local proposals. `DeskActions` applies exact proposals and idempotent voice task/draft origins. `DeskWorkspace` and Telegram share these services. Browser recipes use the documented MCP UI-tool approach, require exact origins/tools and validate nested URL arguments both before initial approval and continuation. The operator's isolated browser service must enforce its own network and execution policy.
+
+`ConnectionCenter` keeps separate sealed auth records, redacted status and owner-configured service resolution. One-use OAuth/PKCE flows consume state before token exchange and reject late commits after state changes. `LiveSessions` binds call/thread/project and frame claims; Realtime exposes only a review-staging function for local task/search/draft actions. Browser visual capture stops all tracks before preview. Production Mini App entry points are bundled, so runtime module delivery does not depend on unserved internal paths. See [workspace lifecycle](pro-desk.md#lifecycle-limits-and-release-operations).

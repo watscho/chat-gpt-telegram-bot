@@ -1,6 +1,6 @@
 # Configuration reference
 
-Current release: **11.0.0**.
+Current release: **12.0.0**.
 
 Copy `.env.example` to `.env` for local development, or inject environment variables in production. Never commit credentials, state databases or user content. Invalid numeric and enum values fail at startup; error messages name settings without their values. Numeric values must be positive integers within the maxima below.
 
@@ -163,3 +163,7 @@ Studio reuses existing models, owner/project budgets, `MAX_JOB_BYTES`, file limi
 | `MAX_VIDEO_FRAMES`                | `8`                       | Positive integer, at most ten sampled frames                                    |
 
 Video audio uses `OPENAI_MEETING_MODEL` through the meeting WAV port, without speaker labeling. Video audio estimates add the normal transcription estimate and configured meeting-minute estimate; the plan conservatively quotes the full configured clip duration. Actual transcription reserves the extracted clip duration. Zero model requests are made by local search, watch checks, ZIP organization, template editing or artifact rendering. Native processing is bounded by existing request/image deadlines, document/export limits and the independent owner Studio/Suite byte budgets. Configure a private persistent `STATE_DB_PATH` for watches/shared projects. See [Suite setup and user paths](pro-suite.md).
+
+## Personal workspace and connection authorization
+
+Desk reuses `MAX_PROJECT_BYTES`, private state, user allowlisting, existing estimates and the signed `MINI_APP_URL`. Optional `oauth` metadata on an `OPENAI_MCP_CONNECTIONS` entry configures fixed HTTPS authorization/token endpoints, client ID, scopes and an optional client secret. The exact callback is the Mini App base plus `/oauth/callback`. No OAuth client, account access or isolated browser service is provisioned automatically. See [provider configuration example and limits](pro-desk.md#connections-and-authorization). Protect the bot token and state backups: owner/connection access tokens are sealed with a key derived from that token and require reauthorization after rotation. Live visual frames use a separate conservative image quota reservation; account billing limits remain authoritative.

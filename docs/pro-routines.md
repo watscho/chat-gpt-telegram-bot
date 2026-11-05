@@ -1,6 +1,6 @@
 # Daily routines
 
-Current release: **11.0.0**.
+Current release: **12.0.0**.
 
 This guide covers six daily-use workflows and a personalized home panel. Only isolated adjacent unit tests and static/build checks qualify the implementation; no paid provider, native parser/media, browser, integration or deployment tests are authorized.
 

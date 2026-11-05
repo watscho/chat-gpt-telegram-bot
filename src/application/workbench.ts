@@ -29,7 +29,11 @@ export class Workbench {
     private readonly workspaces: Workspaces,
     private readonly provider?: ProviderWorkbench,
     private readonly store?: StateStore,
-    private readonly now = Date.now
+    private readonly now = Date.now,
+    private readonly resolveConnection?: (
+      owner: string,
+      id: string
+    ) => import('../domain/workbench.js').Connection
   ) {
     this.journal = new ResourceJournal(
       { remove: resource => this.port().remove(resource) },
@@ -117,6 +121,8 @@ export class Workbench {
       throw new UserError(
         'Connection is not configured for this Telegram user.'
       )
+    if (request.kind === 'connection')
+      this.resolveConnection?.(owner, request.connection)
   }
   preflight(
     owner: string,
@@ -201,7 +207,8 @@ export class Workbench {
             item.id === request.connection
         )!
         return await this.port().connection(
-          connection,
+          this.resolveConnection?.(scope.owner, request.connection) ??
+            connection,
           messages,
           options,
           request.continuation

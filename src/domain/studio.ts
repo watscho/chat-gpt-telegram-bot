@@ -1,3 +1,4 @@
+import type { DeskSpec } from './desk.js'
 import type { RoutineSpec } from './routine.js'
 import type { WorkflowSpec } from './suite.js'
 import type { Document, Image, ModelReply } from './conversation.js'
@@ -16,6 +17,7 @@ export interface InboxItem {
   createdAt: number
 }
 export interface MissionStep {
+  desk?: DeskSpec
   routine?: RoutineSpec
   workflow?: WorkflowSpec
   kind: 'compose' | 'search' | 'analysis' | 'connection' | 'media' | 'local'

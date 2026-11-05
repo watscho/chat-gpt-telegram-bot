@@ -1,3 +1,4 @@
+import type { DeskSpec } from '../domain/desk.js'
 import type { RecipeStep, WorkflowSpec } from '../domain/suite.js'
 import { randomUUID } from 'node:crypto'
 import type { Config } from '../config.js'
@@ -17,9 +18,11 @@ const id = () => randomUUID().slice(0, 12)
 export function studioEstimate(
   config: Config,
   kind: MissionStep['kind'],
-  workflow?: WorkflowSpec
+  workflow?: WorkflowSpec,
+  desk?: DeskSpec
 ): number {
   if (kind === 'local') return 0
+  if (desk?.kind === 'photo') return config.estimateChat + config.estimateImage
   if (kind === 'media')
     return (
       config.estimateTranscription +
@@ -227,7 +230,8 @@ export class Studio {
             step.prompt.length > 2000 ||
             ((step.kind === 'media' || step.kind === 'local') &&
               !step.workflow &&
-              !step.routine) ||
+              !step.routine &&
+              !step.desk) ||
             (step.kind === 'connection' &&
               !this.config.workbench.connections.some(
                 connection =>
@@ -243,7 +247,13 @@ export class Studio {
         ...this.step(spec.kind, spec.title, spec.prompt, spec.connection),
         ...(spec.workflow ? { workflow: structuredClone(spec.workflow) } : {}),
         ...(spec.routine ? { routine: structuredClone(spec.routine) } : {}),
-        estimate: studioEstimate(this.config, spec.kind, spec.workflow)
+        ...(spec.desk ? { desk: structuredClone(spec.desk) } : {}),
+        estimate: studioEstimate(
+          this.config,
+          spec.kind,
+          spec.workflow,
+          spec.desk
+        )
       }))
     } else if (mode === 'chain') {
       if (

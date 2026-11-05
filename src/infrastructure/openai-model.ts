@@ -120,7 +120,14 @@ export class OpenAIModel implements LanguageModel {
               quality: options.imageQuality ?? this.config.imageQuality,
               size: options.imageSize ?? this.config.imageSize,
               output_format: 'png',
-              action: options.action ?? 'auto'
+              action: options.action ?? 'auto',
+              ...(options.imageMask
+                ? {
+                    input_image_mask: {
+                      image_url: `data:${options.imageMask.mime};base64,${options.imageMask.data}`
+                    }
+                  }
+                : {})
             },
             { type: 'web_search' }
           ],

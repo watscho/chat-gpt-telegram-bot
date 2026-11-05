@@ -749,12 +749,12 @@ export class SuiteCommands {
     if (action === 'save') {
       const mission = this.studio.mission(ctx.owner, id!)
       if (
-        mission.steps.some(step => step.routine) ||
+        mission.steps.some(step => step.routine || step.desk) ||
         mission.input.video ||
         mission.steps.some(step => step.workflow?.record)
       )
         throw new UserError(
-          'Recipes cannot retain video IDs, daily routine bindings or live record bindings. Save a fresh portable plan.'
+          'Recipes cannot retain video IDs, daily routine/Desk bindings or live record bindings. Save a fresh portable plan.'
         )
       const recipe = this.suite.saveRecipe(
         ctx.owner,

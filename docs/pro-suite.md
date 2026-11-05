@@ -1,6 +1,6 @@
 # Pro Suite: twenty-workflow acceptance contract
 
-Current release: **11.0.0**.
+Current release: **12.0.0**.
 
 Status: implemented; introduced in version 10.0.0; unit/static qualification is recorded below. This matrix consolidates the twenty approved follow-up capabilities. Existing Studio/provider workflows are reused; a recipe name alone is not completion evidence. Final qualification remains adjacent unit/static checks only, with no paid, native-media, browser, integration or deployment acceptance runs.
 

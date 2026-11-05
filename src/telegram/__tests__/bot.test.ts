@@ -3447,3 +3447,129 @@ void test('daily Telegram wiring uses explicit current/replied materials, signed
   app.bot.stopJobs()
   assert.equal(app.errors(), 0)
 })
+void test('Desk Telegram and signed backend wiring preserve personal assistant permissions, material scope, live reviews and erase lifecycle', async () => {
+  const { deskPNG } = await import('../../__tests__/desk.js'),
+    { Desk } = await import('../../application/desk.js'),
+    provider = new FakeWorkbench(),
+    store = new MemoryStateStore(),
+    settings = config()
+  settings.statePath = '/unit/desk.db'
+  settings.workbench.miniAppURL = 'https://voice.example.com/voice'
+  settings.workbench.connections = [
+    {
+      id: 'mail',
+      owner: 42,
+      title: 'Mail',
+      server: 'https://mcp.example.com',
+      authorization: 'unit-secret',
+      tools: ['read']
+    }
+  ]
+  const app = setup(undefined, 10, undefined, store, {
+      config: settings,
+      provider,
+      downloadImage: () => Promise.resolve(deskPNG())
+    }),
+    data = new Desk(settings, store)
+  await app.bot.handleUpdate(update('/hub'))
+  await app.bot.handleUpdate(callback('desk:assistants'))
+  await app.bot.handleUpdate(
+    update('/assistant add Editor | Be concise | custom-model | search')
+  )
+  const id = data.get('42:42').assistants[0]!.id
+  await app.bot.handleUpdate(update(`/assistant use ${id}`))
+  await app.bot.handleUpdate(update('Improve this paragraph'))
+  assert.equal(app.model.options.at(-1)!.enableImages, false)
+  assert.equal(app.model.options.at(-1)!.enableSearch, false)
+  assert.equal(app.model.options.at(-1)!.chatModel, 'custom-model')
+  await app.bot.handleUpdate(update('/assistant use none'))
+  await app.bot.handleUpdate(update('/canvas add Draft | text | One two three'))
+  const doc = data.get('42:42').documents[0]!
+  await app.bot.handleUpdate(update(`/canvas edit ${doc.id} 1 0 3 | Improve`))
+  const mission = studioMission(store)
+  app.bot.workspaceAction('42:42', {
+    action: 'start',
+    id: mission.id,
+    revision: mission.revision
+  })
+  await app.bot.tickJobs()
+  assert.equal(app.model.options.at(-1)!.structured!.fields[0], 'replacement')
+  await app.bot.handleUpdate(update('/mission context ' + mission.id))
+  assert.ok(app.documents.length)
+  await app.bot.handleUpdate(update('/project new Changed'))
+  await app.bot.tickJobs()
+  assert.equal(studioMission(store).state, 'uncertain')
+  await app.bot.handleUpdate(update('/project use none'))
+  const call = await app.bot.openLive('42:42', 'v=0', 'conversation'),
+    pending = app.bot.liveAction(
+      '42:42',
+      call.id,
+      'call-task',
+      '{"kind":"task","text":"Review proposal"}'
+    ) as { token: string; revision: number }
+  assert.ok(pending.token)
+  app.bot.liveConfirm('42:42', call.id, pending.token, 1, true)
+  const cancelled = app.bot.liveAction(
+    '42:42',
+    call.id,
+    'call-cancel',
+    '{"kind":"task","text":"Do not create"}'
+  ) as { token: string }
+  app.bot.liveConfirm('42:42', call.id, cancelled.token, 1, false)
+  app.bot.liveFrame('42:42', call.id)
+  app.bot.liveFrame('42:42', call.id)
+  app.bot.liveFrame('42:42', call.id)
+  assert.throws(() => app.bot.liveFrame('42:42', call.id), /three/)
+  await app.bot.handleUpdate(update('/new Other'))
+  assert.throws(
+    () => app.bot.liveAction('42:42', call.id, 'call-other', '{}'),
+    /source/
+  )
+  await app.bot.closeLive('42:42', call.id)
+  await assert.rejects(
+    app.bot.oauthCallback(new URLSearchParams()),
+    /Authorization/
+  )
+  await app.bot.handleUpdate(update('/data'))
+  await app.bot.handleUpdate(update('/erase confirm'))
+  assert.equal(store.records('desk').length, 0)
+  assert.equal(store.records('connection-auth').length, 0)
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})
+void test('personal assistant default models and live-frame persistence failures retain conservative quota behavior', async () => {
+  const provider = new FakeWorkbench(),
+    store = new MemoryStateStore(),
+    settings = config()
+  settings.statePath = '/unit/desk.db'
+  settings.workbench.miniAppURL = 'https://voice.example.com/voice'
+  const app = setup(undefined, 10, undefined, store, {
+    config: settings,
+    provider
+  })
+  await app.bot.handleUpdate(
+    update('/assistant add Default | Be concise | default | ')
+  )
+  const { Desk } = await import('../../application/desk.js'),
+    desk = new Desk(settings, store),
+    id = desk.get('42:42').assistants[0]!.id
+  await app.bot.handleUpdate(update(`/assistant use ${id}`))
+  await app.bot.handleUpdate(update('Question'))
+  assert.equal(app.model.options.at(-1)!.chatModel, settings.chatModel)
+  await app.bot.handleUpdate(update('/model custom-model'))
+  await app.bot.handleUpdate(update('Another question'))
+  assert.equal(app.model.options.at(-1)!.chatModel, 'custom-model')
+  const call = await app.bot.openLive('42:42', 'v=0', 'conversation'),
+    original = store.putRecord.bind(store)
+  let count = 0
+  store.putRecord = (kind, key, value) => {
+    if (kind === 'usage' && ++count === 2)
+      throw new Error('Interrupted quota completion')
+    original(kind, key, value)
+  }
+  assert.throws(() => app.bot.liveFrame('42:42', call.id))
+  store.putRecord = original
+  await app.bot.closeLive('42:42', call.id)
+  app.bot.stopJobs()
+  assert.equal(app.errors(), 0)
+})

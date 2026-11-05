@@ -1,6 +1,6 @@
 # Telegram AI Bot Pro: user guide
 
-Current release: **11.0.0**.
+Current release: **12.0.0**.
 
 The bot works in private chats for allowlisted users only. Features use the OpenAI API and incur provider charges. Pro refers to this project's feature set.
 
@@ -453,3 +453,7 @@ Run `/suite` for twenty connected workflows and `/workspace` for the authenticat
 ## Your daily home
 
 Use `/home` for three configurable shortcuts and local progress, or `/home workspace` for the signed Home panel. Plan with reviewed calendar/manual availability (`/day`), close the day explicitly, record receipts and obligations (`/expense`), practice sourced cards (`/review`), follow up on selected correspondence (`/waiting`), curate selected RSS/Atom/public pages (`/reading`) and run a local focus timer (`/focus`). Model/service work first creates a reviewable mission. See the complete [daily routines guide](pro-routines.md) for examples, confirmation steps, currency precision, schedules, source limits, exports and deletion.
+
+## Personal workspace
+
+Open `/hub` or `/workspace` for Ask, Create, My materials, My day and Assistants. `/canvas` edits versioned text/code, `/assistant` selects explicit instructions/knowledge/tools, `/sheet` imports and reviews interactive data, `/photos` keeps original/candidate image versions, `/browser` prepares reviewed tasks on configured isolated browser services, and `/services` exposes authorization/permissions. Live voice supports separately reviewed visual frames and local task/search/draft proposals. See [personal workspace commands, limits and setup](pro-desk.md).
