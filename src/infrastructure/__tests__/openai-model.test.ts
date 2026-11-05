@@ -108,7 +108,7 @@ void test('SDK sends inline references and forced edit; image-only results are a
         content: [
           {
             type: 'input_text',
-            text: 'Previously generated image. Assistant text: done'
+            text: 'Previously generated attachment. Assistant text: done'
           },
           {
             type: 'input_image',
@@ -482,4 +482,65 @@ void test('extractive recap is labelled as untrusted input and project spellings
     'Brand'
   )
   assert.ok(calls >= 2)
+})
+
+void test('structured Responses use a strict field schema and only validated rows become export files', async () => {
+  let valid = true
+  const model = modelWith((_url, init) => {
+    const body = JSON.parse(init!.body as string) as {
+      tools: unknown[]
+      tool_choice: string
+      text: {
+        format: {
+          type: string
+          strict: boolean
+          schema: { properties: { rows: { items: { required: string[] } } } }
+        }
+      }
+    }
+    assert.deepEqual(body.tools, [])
+    assert.equal(body.tool_choice, 'none')
+    assert.equal(body.text.format.type, 'json_schema')
+    assert.equal(body.text.format.strict, true)
+    assert.deepEqual(body.text.format.schema.properties.rows.items.required, [
+      'name',
+      'amount'
+    ])
+    return Promise.resolve(
+      Response.json({
+        status: 'completed',
+        output: [
+          {
+            type: 'message',
+            content: [
+              {
+                type: 'output_text',
+                text: valid
+                  ? '{"rows":[{"name":"Invoice","amount":"12"}]}'
+                  : 'invalid',
+                annotations: []
+              }
+            ]
+          }
+        ]
+      })
+    )
+  })
+  const answer = await model.reply([{ role: 'user', content: 'Extract' }], {
+    structured: { format: 'csv', fields: ['name', 'amount'] }
+  })
+  assert.equal(answer.artifact!.name, 'result.csv')
+  assert.equal(answer.artifact!.rows, 1)
+  assert.match(
+    Buffer.from(answer.artifact!.data, 'base64').toString(),
+    /Invoice/
+  )
+  assert.match(answer.text, /1 rows/)
+  valid = false
+  await assert.rejects(
+    model.reply([], {
+      structured: { format: 'json', fields: ['name', 'amount'] }
+    }),
+    /valid structured JSON/
+  )
 })

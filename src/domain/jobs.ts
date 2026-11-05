@@ -9,6 +9,8 @@ export interface JobInput {
   memories: string[]
 }
 export interface Job {
+  priority?: number
+  notBefore?: number
   batch?: { group: string; action: string; file: string }
   id: string
   thread: string
@@ -20,7 +22,7 @@ export interface Job {
   input: JobInput
   result: ModelReply | null
   error: string
-  delivery: 'pending' | 'sent' | 'failed'
+  delivery: 'pending' | 'queued' | 'suppressed' | 'sent' | 'failed'
   attempts: number
   nextDelivery: number
 }

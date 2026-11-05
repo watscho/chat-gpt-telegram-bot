@@ -34,7 +34,7 @@ Speech gathers bounded 24 kHz mono PCM over a short-lived Realtime connection, t
 
 ## Durable work and persistence
 
-SQLite schema 2 stores profiles, sessions and scoped JSON records (`workspace`, `usage`, `queue`). Owner keys are private chat/user pairs; session keys append a conversation ID. Prefix deletion uses exact owner boundaries. Session replacement and evictions are transactional. Workspace/queue caches publish only after successful persistence. This is single-process coordination, not a distributed queue.
+SQLite schema 3 stores profiles, sessions and scoped JSON records (`workspace`, `usage`, `queue`). Owner keys are private chat/user pairs; session keys append a conversation ID. Prefix deletion uses exact owner boundaries. Session replacement and evictions are transactional. Workspace/queue caches publish only after successful persistence. This is single-process coordination, not a distributed queue.
 
 The worker runs one background job at a time and locks its target conversation. Foreground work elsewhere may proceed within the shared cap. Jobs snapshot reference files/instructions and origin project ID; explicit notes are resolved at execution. Schedules capture references when an occurrence becomes a job. No-context summaries fail before paid work.
 
@@ -75,3 +75,13 @@ Quoted-answer mappings are created from successfully delivered answer chunks (in
 Batch admission validates all files/slots/payloads before one queue write. Each job retains batch/file metadata after input cleanup. Execution uses one document with an empty history/recap and normal current notes/glossary; paid retry/recovery and delivery contracts remain unchanged.
 
 `archive.ts` validates an unknown JSON object into canonical portable records, remaps ownership/IDs, merges conflicts conservatively and rechecks destination/global budgets. `StateStore.commitImport` writes profile, new sessions and merged scopes in one transaction, without restoring queue/usage state or deleting existing content. Cache refresh occurs after commit. Unit tests mock SQLite and assert transaction boundaries; they do not exercise a real database.
+
+## Experience, evidence and structured output
+
+`Experience` owns per-owner UI/quiet/digest preferences, explicit bookmarks and a bounded durable notification outbox. Jobs/tasks publish target references and transition delivery to `queued`; `sent` and `suppressed` are terminal delivery receipts. Outbox claims persist before Telegram transport, with bounded delivery-only retries. Manual retrieval bypasses quiet/digest and acknowledges pending results. The worker and caches target one process; no distributed or exactly-once delivery is promised.
+
+`evidenceCards` normalizes answer-bound excerpts and safe URLs. Cards share session lifecycle/character budgets; callbacks use bounded SHA-256 references resolved only within the owner/current conversation. Opening cards is local and never fetches remote pages. Explicit bookmarks are independent retained copies. `ExperienceCommands` handles delivery, bookmarks, budgets, queue controls, languages and structured requests.
+
+`UsageLedger` reserves owner and origin-project aggregates in one usage-record write before paid execution. Successful unused-tool refunds settle both; failure reservations remain. Deferred jobs retain their origin project. Structured requests carry a validated specification through context review to the Responses adapter, disable tools/streaming and request strict JSON schema. Independent local validation produces bounded CSV/JSON artifacts retained as assistant documents.
+
+`localization` applies static en-keyed ru/es catalogs to UI lines/button labels only, preserving raw model/user/source content and callback payloads. Unknown lines fall back to English. JSON resources ship in `dist`. Archive format 2 validates/merges new portable metadata/bookmarks in the existing atomic import transaction; destination notification preferences/outbox and usage records are excluded from import. See [release acceptance](pro-experience.md).

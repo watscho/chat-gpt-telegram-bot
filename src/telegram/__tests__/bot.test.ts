@@ -1805,3 +1805,361 @@ void test('import without a replied archive stops locally with navigation guidan
   assert.equal(app.model.calls.length, 0)
   assert.match(app.replies.at(-1)!, /Reply to a \/data JSON archive/)
 })
+
+void test('quiet hours collect job/task notifications durably and explicit digest delivery makes no new paid calls', async () => {
+  let clock = Date.parse('2026-11-05T23:00:00Z')
+  mock.method(Date, 'now', () => clock)
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store)
+  await app.bot.handleUpdate(update('/quiet 22:00-08:00'))
+  await app.bot.handleUpdate(update('/digest 1h'))
+  await app.bot.handleUpdate(update('/job research Find sources'))
+  await app.bot.handleUpdate(update('/task add Review | 2026-11-06 00:00'))
+  await app.bot.handleUpdate(update('/tasks all'))
+  assert.match(app.replies.at(-1)!, /Delivery: pending/)
+  clock = Date.parse('2026-11-06T00:30:00Z')
+  await app.bot.tickJobs()
+  assert.equal(app.model.calls.length, 1)
+  const state = store.getRecord<{ notices: { id: string }[] }>(
+    'experience',
+    '42:42'
+  )!
+  assert.equal(state.notices.length, 2)
+  assert.equal(
+    store.getRecord<{ jobs: { delivery: string }[] }>('queue', '42:42')!
+      .jobs[0]!.delivery,
+    'queued'
+  )
+  assert.equal(
+    store.getRecord<{ tasks: { delivery: string }[] }>('workflow', '42:42')!
+      .tasks[0]!.delivery,
+    'queued'
+  )
+  await app.bot.handleUpdate(update('/tasks all'))
+  assert.match(app.replies.at(-1)!, /Delivery:/)
+  const before = app.replies.length
+  await app.bot.handleUpdate(update('/digest now'))
+  assert.equal(app.model.calls.length, 1)
+  assert.ok(
+    app.replies.slice(before).some(text => text.includes('Notification digest'))
+  )
+  assert.equal(
+    store.getRecord<{ notices: unknown[] }>('experience', '42:42')!.notices
+      .length,
+    0
+  )
+  assert.equal(
+    store.getRecord<{ jobs: { delivery: string }[] }>('queue', '42:42')!
+      .jobs[0]!.delivery,
+    'sent'
+  )
+  const jobId = store.getRecord<{ jobs: { id: string }[] }>('queue', '42:42')!
+    .jobs[0]!.id
+  await app.bot.handleUpdate(callback(`notice:result:${jobId}`))
+  assert.equal(app.model.calls.length, 1)
+})
+
+void test('notification digests skip deleted/completed targets and retry transport only with a bounded outbox', async () => {
+  let clock = Date.parse('2026-11-05T12:00:00Z')
+  mock.method(Date, 'now', () => clock)
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store)
+  await app.bot.handleUpdate(update('/digest 5m'))
+  await app.bot.handleUpdate(update('/job summary Retained content'))
+  await app.bot.handleUpdate(update('Context'))
+  await app.bot.tickJobs()
+  const queue = store.getRecord<{ jobs: { id: string; delivery: string }[] }>(
+      'queue',
+      '42:42'
+    )!,
+    id = queue.jobs[0]!.id
+  const paid = app.model.calls.length
+  clock += 300000
+  app.transport.failMessages = true
+  await assert.rejects(app.bot.tickJobs())
+  app.transport.failMessages = false
+  assert.equal(app.model.calls.length, paid)
+  await app.bot.handleUpdate(update('/notifications'))
+  await app.bot.handleUpdate(update(`/notifications retry job-${id}`))
+  await app.bot.handleUpdate(update('/digest now'))
+  assert.equal(app.model.calls.length, paid)
+  await app.bot.handleUpdate(update('/job research More sources'))
+  await app.bot.tickJobs()
+  const nextId = store
+    .getRecord<typeof queue>('queue', '42:42')!
+    .jobs.at(-1)!.id
+  await app.bot.handleUpdate(callback(`notice:result:${nextId}`))
+  assert.equal(
+    store.getRecord<{ notices: unknown[] }>('experience', '42:42')!.notices
+      .length,
+    0
+  )
+  await app.bot.handleUpdate(update('/job research Deleted'))
+  await app.bot.tickJobs()
+  const deleted = store
+    .getRecord<typeof queue>('queue', '42:42')!
+    .jobs.at(-1)!.id
+  await app.bot.handleUpdate(update(`/job delete ${deleted}`))
+  await app.bot.handleUpdate(update('/digest now'))
+  assert.equal(
+    store.getRecord<{ notices: unknown[] }>('experience', '42:42')!.notices
+      .length,
+    0
+  )
+})
+
+void test('source-card buttons save private bookmarks and retain stable callback sizes across history', async () => {
+  const model = new FakeModel()
+  model.answer = {
+    text: 'Cited answer',
+    images: [],
+    sources: [{ title: 'Primary source', url: 'https://example.com/source' }]
+  }
+  const store = new MemoryStateStore(),
+    app = setup(model, 10, undefined, store)
+  await app.bot.handleUpdate(update('Question'))
+  const card = button(app, 'card:')
+  assert.ok(Buffer.byteLength(card) <= 64)
+  await app.bot.handleUpdate(callback(card))
+  assert.match(app.replies.at(-1)!, /example.com\/source/)
+  await app.bot.handleUpdate(callback(button(app, 'bookmark:source:')))
+  await app.bot.handleUpdate(callback(button(app, 'bookmark:answer:')))
+  const saved = store.getRecord<{ bookmarks: { id: string }[] }>(
+    'experience',
+    '42:42'
+  )!.bookmarks
+  assert.equal(saved.length, 2)
+  await app.bot.handleUpdate(update(`/bookmark tags ${saved[0]!.id} | work`))
+  await app.bot.handleUpdate(update('/bookmarks #work'))
+  await app.bot.handleUpdate(update('/sources'))
+  await app.bot.handleUpdate(update('/new Other'))
+  await app.bot.handleUpdate(callback(card))
+  assert.match(app.replies.at(-1)!, /no longer retained/)
+  await app.bot.handleUpdate(update('/reset'))
+  assert.equal(
+    store.getRecord<{ bookmarks: unknown[] }>('experience', '42:42')!.bookmarks
+      .length,
+    2
+  )
+  await app.bot.handleUpdate(update('/erase confirm'))
+  assert.equal(store.getRecord('experience', '42:42'), undefined)
+})
+
+void test('project budgets account for foreground, voice and original-project jobs inside the owner cap', async () => {
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store, {
+      config: { ...config(), confirmExpensiveRequests: true }
+    })
+  await app.bot.handleUpdate(update('/project new A'))
+  await app.bot.handleUpdate(update('/project_budget 0.1'))
+  await app.bot.handleUpdate(update('First'))
+  assert.equal(app.model.calls.length, 1)
+  await app.bot.handleUpdate(update('Over budget'))
+  assert.equal(app.model.calls.length, 1)
+  assert.match(app.replies.at(-1)!, /budget/)
+  await app.bot.handleUpdate(update('/project_budget 1'))
+  await app.bot.handleUpdate(update('/job research Background'))
+  const preview = button(app, 'work:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`work:${preview}:confirm`))
+  await app.bot.handleUpdate(update('/new Other'))
+  await app.bot.handleUpdate(update('/project new B'))
+  await app.bot.tickJobs()
+  const usage = store.getRecord<{
+    projects: Record<string, { requests: number }>
+  }>('usage', '42:42')!
+  assert.equal(usage.projects['1']!.requests, 2)
+  assert.equal(usage.projects['2'], undefined)
+  await app.bot.handleUpdate(update('/project_usage'))
+  assert.match(app.replies.at(-1)!, /Requests: 0/)
+})
+
+void test('UI localization preserves generated/quoted content and answer language remains a conversation preference', async () => {
+  const model = new FakeModel()
+  model.answer = 'Task completed.'
+  const store = new MemoryStateStore(),
+    app = setup(model, 10, undefined, store)
+  await app.bot.handleUpdate(update('/language ui ru'))
+  assert.ok(!app.replies.at(-1)!.startsWith('UI language:'))
+  await app.bot.handleUpdate(update('/language answer es'))
+  await app.bot.handleUpdate(update('Question'))
+  assert.equal(app.replies.at(-1), 'Task completed.')
+  assert.match(model.options.at(-1)!.instructions!, /preference: es/)
+  const keyboard = app.keyboards.at(-1)!.inline_keyboard.flat()
+  assert.ok(
+    keyboard.some(
+      item =>
+        item.callback_data.startsWith('response:up:') && item.text !== 'Helpful'
+    )
+  )
+  await app.bot.handleUpdate(update('/guide delivery'))
+  await app.bot.handleUpdate(update('/language ui es'))
+  await app.bot.handleUpdate(update('/quiet'))
+  assert.ok(app.replies.at(-1)!.startsWith('Horario silencioso:'))
+  await app.bot.handleUpdate(update('/language ui en'))
+  await app.bot.handleUpdate(update('/language answer auto'))
+})
+
+void test('structured output requests preserve their specification through review and deliver a retained file', async () => {
+  const model = new FakeModel()
+  model.answer = {
+    text: 'Structured output ready: 1 rows. Fields: name, amount.',
+    images: [],
+    artifact: {
+      rows: 1,
+      name: 'result.csv',
+      mime: 'text/csv',
+      data: Buffer.from('"name","amount"\r\n"Invoice","12"').toString('base64')
+    }
+  }
+  const store = new MemoryStateStore(),
+    app = setup(model, 10, undefined, store)
+  await app.bot.handleUpdate(update('/context on'))
+  await app.bot.handleUpdate(
+    update('/output csv name,amount | Extract from the request')
+  )
+  assert.equal(model.calls.length, 0)
+  assert.match(app.replies.at(-1)!, /Output format: csv/)
+  const preview = button(app, 'context:').split(':')[1]!
+  await app.bot.handleUpdate(callback(`context:${preview}:send`))
+  assert.deepEqual(model.options[0]!.structured, {
+    format: 'csv',
+    fields: ['name', 'amount']
+  })
+  assert.equal(model.options[0]!.enableImages, false)
+  assert.equal(app.documents.length, 1)
+  assert.equal(
+    store.sessions()[0]![1].messages.at(-1)!.documents![0]!.name,
+    'result.csv'
+  )
+})
+
+void test('stale outbox targets preserve sent receipts and suppress completed, removed or disabled deliveries', async () => {
+  const store = new MemoryStateStore()
+  const tasks = ['done', 'sent', 'suppressed'].map((state, index) => ({
+    id: `task-${index}`,
+    thread: '1',
+    title: state,
+    status: state === 'done' ? 'done' : 'open',
+    dueAt: 1,
+    reminded: true,
+    attempts: 1,
+    nextAttempt: 0,
+    ...(state !== 'done' ? { delivery: state } : {})
+  }))
+  store.putRecord('workflow', '42:42', {
+    tasks,
+    glossary: {},
+    quotes: [],
+    approval: null
+  })
+  store.putRecord('queue', '42:42', {
+    jobs: ['sent', 'suppressed'].map(delivery => ({
+      id: delivery,
+      thread: '1',
+      kind: 'research',
+      state: 'succeeded',
+      delivery,
+      input: { prompt: 'Old', memories: [] },
+      result: { text: 'Old result', images: [] },
+      createdAt: 1,
+      updatedAt: 1,
+      attempts: 0,
+      nextDelivery: 0
+    })),
+    schedules: []
+  })
+  store.putRecord('experience', '42:42', {
+    language: 'en',
+    quiet: null,
+    digestMinutes: 5,
+    bookmarks: [],
+    notices: [
+      ...tasks.map(task => ({ kind: 'task', target: task.id })),
+      { kind: 'task', target: 'missing' },
+      ...['sent', 'suppressed'].map(target => ({ kind: 'job', target }))
+    ].map((item, index) => ({
+      ...item,
+      id: `notice-${index}`,
+      thread: '1',
+      title: 'Old',
+      queuedAt: 0,
+      attempts: 0,
+      nextAttempt: 0
+    }))
+  })
+  const app = setup(undefined, 10, undefined, store)
+  await app.bot.handleUpdate(update('/digest now'))
+  assert.equal(
+    app.replies.some(text => text.includes('Notification digest')),
+    false
+  )
+  assert.deepEqual(
+    store
+      .getRecord<{ tasks: { delivery: string }[] }>('workflow', '42:42')!
+      .tasks.map(task => task.delivery),
+    ['suppressed', 'sent', 'suppressed']
+  )
+  assert.equal(app.model.calls.length, 0)
+})
+
+void test('bookmark replies use the quoted-text adapter and structured slash prompts never stream or invoke image commands', async () => {
+  const app = setup(undefined, 10, undefined, new MemoryStateStore(), {
+    config: { ...config(), streamResponses: true }
+  })
+  const item = update('/bookmark reply | work')
+  if ('message' in item)
+    Object.assign(item.message, {
+      reply_to_message: {
+        message_id: 100,
+        date: 1,
+        chat: { id: 42, type: 'private' },
+        text: 'Keep this detail'
+      }
+    })
+  await app.bot.handleUpdate(item)
+  await app.bot.handleUpdate(update('/bookmarks #work'))
+  assert.match(app.replies.at(-1)!, /Tags: work/)
+  await app.bot.handleUpdate(
+    update('/output json item | /image Literal source text')
+  )
+  assert.equal(app.model.calls.length, 1)
+  assert.equal(app.model.options[0]!.onText, undefined)
+  assert.equal(app.model.options[0]!.enableImages, false)
+  assert.equal(app.model.options[0]!.structured!.format, 'json')
+})
+
+void test('rescheduled or cleared task deadlines suppress old digest entries and deliver again only when newly due', async () => {
+  let clock = Date.parse('2026-11-05T12:00:00Z')
+  mock.method(Date, 'now', () => clock)
+  const store = new MemoryStateStore(),
+    app = setup(undefined, 10, undefined, store)
+  await app.bot.handleUpdate(update('/digest 5m'))
+  await app.bot.handleUpdate(update('/task add Reschedule | 2026-11-05 13:00'))
+  await app.bot.handleUpdate(update('/task add Clear | 2026-11-05 13:00'))
+  clock += 3600001
+  await app.bot.tickJobs()
+  const tasks = store.getRecord<{ tasks: { id: string }[] }>(
+    'workflow',
+    '42:42'
+  )!.tasks
+  await app.bot.handleUpdate(
+    update(`/task due ${tasks[0]!.id} | 2026-11-05 14:00`)
+  )
+  await app.bot.handleUpdate(update(`/task due ${tasks[1]!.id} | none`))
+  const before = app.replies.length
+  await app.bot.handleUpdate(update('/digest now'))
+  assert.equal(
+    app.replies
+      .slice(before)
+      .some(text => text.includes('Notification digest')),
+    false
+  )
+  clock += 3600000
+  await app.bot.tickJobs()
+  await app.bot.handleUpdate(update('/digest now'))
+  assert.match(
+    app.replies.at(-2)!,
+    /Notification digest.*\n+Task due[\s\S]*Reschedule/
+  )
+  assert.equal(app.model.calls.length, 0)
+})

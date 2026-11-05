@@ -1,3 +1,4 @@
+import { evidenceCards } from './evidence.js'
 import { compact, recapText } from './recap.js'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Config } from '../config.js'
@@ -8,7 +9,7 @@ import type {
   ModelReply,
   ReplyOptions
 } from '../domain/conversation.js'
-import { formatSources } from './sources.js'
+import { formatSources, sourceList } from './sources.js'
 import type { Session, StateStore } from '../domain/state.js'
 import { UserError } from '../domain/conversation.js'
 
@@ -280,8 +281,30 @@ export class Conversations {
         : { ...result, text: result.text.trim() }
     if (!response.text && !response.images.length)
       throw new Error('Empty model response')
+    const evidence = evidenceCards([
+      ...(options.evidence ?? response.evidence ?? []),
+      ...sourceList(response.sources).map((source, index) => ({
+        label: `W${index + 1}`,
+        title: source.title,
+        url: source.url,
+        text: `Cited answer excerpt (not fetched page text): ${response.text.slice(0, 1000)}`
+      }))
+    ])
+    if (evidence.length) response.evidence = evidence
     messages.push({
       id: randomUUID(),
+      ...(evidence.length ? { evidence } : {}),
+      ...(response.artifact
+        ? {
+            documents: [
+              {
+                name: response.artifact.name,
+                mime: response.artifact.mime,
+                data: response.artifact.data
+              }
+            ]
+          }
+        : {}),
       role: 'assistant',
       content: [response.text, formatSources(response.sources)]
         .filter(Boolean)
@@ -360,7 +383,21 @@ export class Conversations {
   }
 
   private characters(messages: readonly Message[]): number {
-    return messages.reduce((sum, message) => sum + message.content.length, 0)
+    return messages.reduce(
+      (sum, message) =>
+        sum +
+        message.content.length +
+        (message.evidence ?? []).reduce(
+          (total, card) =>
+            total +
+            card.label.length +
+            card.title.length +
+            card.text.length +
+            (card.url?.length ?? 0),
+          0
+        ),
+      0
+    )
   }
 
   private prune(): void {

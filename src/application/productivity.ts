@@ -213,6 +213,8 @@ export class Productivity {
         request.references
       )
     const draft: ContextDraft = {
+      ...(request.evidence ? { evidence: request.evidence } : {}),
+      ...(request.structured ? { structured: request.structured } : {}),
       token: randomUUID().slice(0, 12),
       thread,
       revision,
@@ -275,6 +277,7 @@ export class Productivity {
   ): PreparedRequest {
     const draft = this.draft(owner, thread, token, revision)
     const request: PreparedRequest = {
+      ...(draft.structured ? { structured: draft.structured } : {}),
       prompt: draft.prompt,
       images: [],
       documents: [],
@@ -299,7 +302,10 @@ export class Productivity {
       else if (part.kind === 'instructions')
         request.instructions = part.value as string
       else if (part.kind === 'summary') request.summary = part.value as string
-      else request.references = part.value as string
+      else {
+        request.references = part.value as string
+        if (draft.evidence) request.evidence = draft.evidence
+      }
     }
     this.discard(owner)
     return request

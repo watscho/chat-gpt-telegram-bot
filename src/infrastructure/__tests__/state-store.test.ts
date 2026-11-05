@@ -37,7 +37,7 @@ mock.property(
 const { SQLiteStateStore } = await import('../state-store.js')
 
 void test('store accepts supported versions, restricts file permissions and rejects unknown versions', () => {
-  for (const value of [0, 1, 2]) {
+  for (const value of [0, 1, 2, 3]) {
     version = value
     const store = new SQLiteStateStore('private/state.sqlite')
     store.close()
@@ -46,7 +46,7 @@ void test('store accepts supported versions, restricts file permissions and reje
   assert.throws(() => new SQLiteStateStore(':memory:'), /version/)
   version = undefined
   assert.throws(() => new SQLiteStateStore(':memory:'), /version/)
-  assert.equal(closed, 5)
+  assert.equal(closed, 6)
   version = 0
 })
 void test('session replacement uses parameter binding and commits eviction in the same transaction', () => {

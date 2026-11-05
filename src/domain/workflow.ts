@@ -1,5 +1,6 @@
 import type { JobInput } from './jobs.js'
 export interface Task {
+  delivery?: 'queued' | 'sent' | 'suppressed'
   id: string
   thread: string
   title: string

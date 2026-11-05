@@ -37,7 +37,8 @@ export class UsageLedger {
   reserve(
     owner: string,
     kind: UsageKind,
-    allowImages = true
+    allowImages = true,
+    projectId?: string | null
   ): {
     options: {
       enableImages: boolean
@@ -49,9 +50,33 @@ export class UsageLedger {
   } {
     const usage = this.get(owner)
     const settings = this.workspaces.get(owner)
-    const remainingMoney =
+    const project = projectId
+      ? settings.projects.find(item => item.id === projectId)
+      : undefined
+    if (projectId && !project)
+      throw new UserError(
+        'The origin project no longer exists. Requeue work in an existing project or without one.'
+      )
+    const projectUsage = projectId
+      ? (usage.projects?.[projectId] ?? {
+          requests: 0,
+          estimatedMicroUsd: 0,
+          images: 0,
+          searches: 0,
+          voice: 0,
+          transcriptions: 0,
+          failed: 0
+        })
+      : undefined
+    const projectRemaining = project
+      ? (project.dailyBudget ?? this.config.dailyBudgetMicroUsd) -
+        projectUsage!.estimatedMicroUsd
+      : Infinity
+    const remainingMoney = Math.min(
+      projectRemaining,
       (settings.budget ?? this.config.dailyBudgetMicroUsd) -
-      usage.estimatedMicroUsd
+        usage.estimatedMicroUsd
+    )
     const remainingImages = Math.max(
       0,
       (settings.imageLimit ?? this.config.dailyImages) - usage.images
@@ -111,6 +136,7 @@ export class UsageLedger {
       images * this.config.estimateImage +
       searches * this.config.estimateSearch
     if (
+      (projectUsage !== undefined && estimate > projectRemaining) ||
       usage.requests >= this.config.dailyRequests ||
       usage.estimatedMicroUsd + estimate >
         (settings.budget ?? this.config.dailyBudgetMicroUsd) ||
@@ -129,6 +155,15 @@ export class UsageLedger {
     usage.searches += searches
     usage.voice += voice
     usage.transcriptions += transcriptions
+    if (projectUsage && projectId) {
+      projectUsage.requests++
+      projectUsage.estimatedMicroUsd += estimate
+      projectUsage.images += images
+      projectUsage.searches += searches
+      projectUsage.voice += voice
+      projectUsage.transcriptions += transcriptions
+      usage.projects = { ...usage.projects, [projectId]: projectUsage }
+    }
     this.save(owner, usage)
     let settled = false
     return {
@@ -150,6 +185,14 @@ export class UsageLedger {
           (searches - usedSearches) * this.config.estimateSearch
         current.images -= images - usedImages
         current.searches -= searches - usedSearches
+        if (projectId && current.projects?.[projectId]) {
+          const entry = current.projects[projectId]
+          entry.estimatedMicroUsd -=
+            (images - usedImages) * this.config.estimateImage +
+            (searches - usedSearches) * this.config.estimateSearch
+          entry.images -= images - usedImages
+          entry.searches -= searches - usedSearches
+        }
         this.save(owner, current)
       },
       fail: () => {
@@ -158,9 +201,20 @@ export class UsageLedger {
         const current = this.get(owner)
         if (current.day !== usage.day) return
         current.failed++
+        if (projectId && current.projects?.[projectId])
+          current.projects[projectId].failed++
         this.save(owner, current)
       }
     }
+  }
+  projectReport(owner: string, id: string): string {
+    const project = this.workspaces
+      .get(owner)
+      .projects.find(item => item.id === id)
+    if (!project) throw new UserError('Select an existing project first.')
+    const usage = this.get(owner),
+      entry = usage.projects?.[id]
+    return `Project ${id}: ${project.title}\nUTC day: ${usage.day}\nRequests: ${entry?.requests ?? 0}\nEstimated spend: $${((entry?.estimatedMicroUsd ?? 0) / 1000000).toFixed(6)}\nEffective estimated-spend ceiling: $${(Math.min(project.dailyBudget ?? this.config.dailyBudgetMicroUsd, this.workspaces.get(owner).budget ?? this.config.dailyBudgetMicroUsd) / 1000000).toFixed(6)}\nImages: ${entry?.images ?? 0}; searches: ${entry?.searches ?? 0}; voice: ${entry?.voice ?? 0}; transcriptions: ${entry?.transcriptions ?? 0}; failed: ${entry?.failed ?? 0}\nOwner quotas remain authoritative; these are configured estimates, not invoices.`
   }
   report(owner: string): string {
     const usage = this.get(owner)

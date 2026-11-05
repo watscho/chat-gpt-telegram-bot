@@ -12,7 +12,7 @@ export class SQLiteStateStore implements StateStore {
     this.db = new sqlite.DatabaseSync(path)
     if (path !== ':memory:') chmodSync(path, 0o600)
     const version = this.db.prepare('PRAGMA user_version').get()?.user_version
-    if (version !== 0 && version !== 1 && version !== 2) {
+    if (version !== 0 && version !== 1 && version !== 2 && version !== 3) {
       this.db.close()
       throw new Error('Unsupported state database version')
     }
@@ -22,7 +22,7 @@ export class SQLiteStateStore implements StateStore {
       CREATE TABLE IF NOT EXISTS sessions (key TEXT PRIMARY KEY, data TEXT NOT NULL, touched INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS profiles (key TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS records (scope TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (scope, key));
-      PRAGMA user_version = 2;
+      PRAGMA user_version = 3;
     `)
   }
   sessions(): [string, Session][] {

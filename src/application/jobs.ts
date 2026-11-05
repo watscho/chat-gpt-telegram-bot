@@ -11,7 +11,7 @@ export interface WorkerPorts {
   available(owner: string, thread: string): boolean
   input(owner: string, thread: string, prompt: string): JobInput
   execute(owner: string, job: Job, signal: AbortSignal): Promise<ModelReply>
-  deliver(owner: string, job: Job): Promise<void>
+  deliver(owner: string, job: Job, manual?: boolean): Promise<void | 'queued'>
 }
 export class Jobs {
   private readonly local = new Map<string, QueueState>()
@@ -245,7 +245,7 @@ export class Jobs {
   async result(owner: string, id: string): Promise<void> {
     const job = this.get(owner).jobs.find(item => item.id === id)
     if (!job?.result) throw new UserError('No retained result for that job.')
-    await this.ports.deliver(owner, job)
+    await this.ports.deliver(owner, job, true)
   }
   private due(owner: string): void {
     const current = this.read(owner)
@@ -307,10 +307,17 @@ export class Jobs {
       for (const owner of this.owners()) {
         if (!this.ports.allowed(owner)) continue
         this.due(owner)
-        const next = this.read(owner).jobs.find(
-          job =>
-            job.state === 'queued' && this.ports.available(owner, job.thread)
-        )
+        const next = this.read(owner)
+          .jobs.filter(
+            job =>
+              job.state === 'queued' &&
+              (job.notBefore ?? 0) <= this.now() &&
+              this.ports.available(owner, job.thread)
+          )
+          .sort(
+            (a, b) =>
+              (b.priority ?? 0) - (a.priority ?? 0) || a.createdAt - b.createdAt
+          )[0]
         if (next) {
           const controller = new AbortController()
           const key = `${owner}:${next.id}`
@@ -360,16 +367,18 @@ export class Jobs {
           if (
             job.state !== 'succeeded' ||
             job.delivery === 'sent' ||
+            job.delivery === 'queued' ||
+            job.delivery === 'suppressed' ||
             job.attempts >= 3 ||
             job.nextDelivery > this.now()
           )
             continue
           try {
-            await this.ports.deliver(owner, job)
+            const delivery = await this.ports.deliver(owner, job)
             const current = this.get(owner)
             const saved = current.jobs.find(item => item.id === job.id)
             if (saved) {
-              saved.delivery = 'sent'
+              saved.delivery = delivery === 'queued' ? 'queued' : 'sent'
               this.save(owner, current)
             }
           } catch {
@@ -386,6 +395,66 @@ export class Jobs {
       }
     } finally {
       this.ticking = false
+    }
+  }
+  queue(owner: string): {
+    id: string
+    thread: string
+    position: number
+    priority: number
+    notBefore: number
+  }[] {
+    return this.get(owner)
+      .jobs.filter(job => job.state === 'queued')
+      .sort(
+        (a, b) =>
+          Number((a.notBefore ?? 0) > this.now()) -
+            Number((b.notBefore ?? 0) > this.now()) ||
+          (b.priority ?? 0) - (a.priority ?? 0) ||
+          a.createdAt - b.createdAt
+      )
+      .map((job, index) => ({
+        id: job.id,
+        thread: job.thread,
+        position: index + 1,
+        priority: job.priority ?? 0,
+        notBefore: job.notBefore ?? 0
+      }))
+  }
+  prioritize(owner: string, id: string, priority: number): void {
+    if (!Number.isInteger(priority) || priority < 0 || priority > 9)
+      throw new UserError('Priority must be an integer from 0 to 9.')
+    const queue = this.get(owner),
+      job = queue.jobs.find(item => item.id === id && item.state === 'queued')
+    if (!job) throw new UserError('Only queued work can be reprioritized.')
+    job.priority = priority
+    job.updatedAt = this.now()
+    this.save(owner, queue)
+  }
+  defer(owner: string, id: string, notBefore: number): void {
+    if (
+      !Number.isFinite(notBefore) ||
+      notBefore < 0 ||
+      (notBefore !== 0 && notBefore <= this.now())
+    )
+      throw new UserError('Use a future start time or now.')
+    const queue = this.get(owner),
+      job = queue.jobs.find(item => item.id === id && item.state === 'queued')
+    if (!job) throw new UserError('Only queued work can be deferred.')
+    job.notBefore = notBefore
+    job.updatedAt = this.now()
+    this.save(owner, queue)
+  }
+  delivered(
+    owner: string,
+    id: string,
+    delivery: 'sent' | 'suppressed' = 'sent'
+  ): void {
+    const queue = this.get(owner),
+      job = queue.jobs.find(item => item.id === id)
+    if (job) {
+      job.delivery = delivery
+      this.save(owner, queue)
     }
   }
   stop(): void {

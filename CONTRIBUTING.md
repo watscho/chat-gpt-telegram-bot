@@ -18,3 +18,7 @@ These run static checks, unit tests and TypeScript compilation. `npm audit` is a
 Describe changed behavior, migration impact and the checks actually performed. Update user/configuration/operations documentation and `CHANGELOG.md`; keep package and lockfile versions aligned. Commit lockfile changes with dependencies. Never include credentials, private messages, real user files or raw provider errors in fixtures, logs or issues. Do not claim live/native/deployment acceptance from unit coverage.
 
 Contributions use the existing MIT license. See [security policy](SECURITY.md) for private reporting.
+
+## UI translation resources
+
+English is the source language for code, comments, documentation and commits. Deliberately multilingual values belong only in `src/telegram/locales/messages.json`. Keep Russian/Spanish English-key catalogs and placeholder sets aligned; preserve commands, IDs and quoted/model content. Unknown UI messages fall back to English. Unit tests enforce catalog parity; production builds must include the JSON resources. Add language/control-flow coverage using controlled local doubles, never paid translation/provider calls.

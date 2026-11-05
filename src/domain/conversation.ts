@@ -1,3 +1,19 @@
+export interface Evidence {
+  label: string
+  title: string
+  text: string
+  url?: string
+}
+export interface StructuredSpec {
+  format: 'csv' | 'json'
+  fields: string[]
+}
+export interface Artifact {
+  rows: number
+  name: string
+  mime: 'application/json' | 'text/csv'
+  data: string
+}
 export interface Image {
   data: string // Base64, never a provider or Telegram URL.
   mime: 'image/jpeg' | 'image/png' | 'image/webp'
@@ -14,6 +30,7 @@ export interface Source {
 }
 
 export interface Message {
+  evidence?: Evidence[]
   id?: string
   role: 'user' | 'assistant'
   content: string
@@ -22,6 +39,8 @@ export interface Message {
 }
 
 export interface ModelReply {
+  artifact?: Artifact
+  evidence?: Evidence[]
   text: string
   images: Image[]
   sources?: Source[]
@@ -29,6 +48,8 @@ export interface ModelReply {
 }
 
 export interface ReplyOptions {
+  structured?: StructuredSpec
+  evidence?: Evidence[]
   action?: 'auto' | 'generate' | 'edit'
   signal?: AbortSignal
   onStart?: () => void

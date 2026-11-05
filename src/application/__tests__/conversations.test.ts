@@ -420,3 +420,37 @@ void test('trimmed turns yield a local inspectable recap that commits only with 
   await local.reply('a', 'Second')
   local.clearRecap('a')
 })
+
+void test('source evidence and structured files persist with the completed answer and obey history limits', async () => {
+  const model = new FakeModel(),
+    store = new MemoryStateStore(),
+    chat = new Conversations(model, config(), () => 0, store)
+  model.answer = {
+    text: 'Structured output ready',
+    images: [],
+    artifact: {
+      rows: 1,
+      name: 'result.json',
+      mime: 'application/json',
+      data: Buffer.from('{"rows":[{"name":"First"}]}').toString('base64')
+    },
+    sources: [{ title: 'Web', url: 'https://example.com' }]
+  }
+  const answer = await chat.respond('a:1', 'Question', [], {
+    evidence: [{ label: 'L1', title: 'Terms page 2', text: 'Specific excerpt' }]
+  })
+  assert.equal(answer.evidence!.length, 2)
+  assert.equal(chat.history('a:1').at(-1)!.documents![0]!.name, 'result.json')
+  assert.equal(
+    new Conversations(model, config(), () => 0, store).history('a:1').at(-1)!
+      .evidence![0]!.label,
+    'L1'
+  )
+  const bounded = new Conversations(
+    model,
+    { ...config(), maxHistoryCharacters: 10 },
+    () => 0
+  )
+  await bounded.reply('a:1', 'Q')
+  assert.equal(bounded.history('a:1').length, 0)
+})

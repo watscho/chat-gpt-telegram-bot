@@ -206,3 +206,22 @@ void test('recap and cost preview metadata can be independently inspected and ex
   assert.equal(data.consume('a', '1', next.token, undefined).summary, '')
   data.refresh('a')
 })
+
+void test('structured specifications survive review while excluded reference passages lose their source cards', () => {
+  const data = new Productivity(),
+    prepared = {
+      ...request(),
+      structured: { format: 'json' as const, fields: ['name'] },
+      evidence: [{ label: 'L1', title: 'Terms page 2', text: 'Evidence' }]
+    }
+  const first = data.stage('a', '1', undefined, prepared)
+  const included = data.consume('a', '1', first.token, undefined)
+  assert.deepEqual(included.structured, prepared.structured)
+  assert.deepEqual(included.evidence, prepared.evidence)
+  const second = data.stage('a', '1', undefined, prepared),
+    references = second.parts.find(item => item.kind === 'references')!
+  data.toggle('a', '1', second.token, undefined, references.id)
+  const excluded = data.consume('a', '1', second.token, undefined)
+  assert.equal(excluded.evidence, undefined)
+  assert.equal(excluded.references, '')
+})

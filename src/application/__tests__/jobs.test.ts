@@ -347,3 +347,97 @@ void test('batch enqueue is all-or-nothing, keeps per-file metadata and obeys ca
   assert.throws(() => jobs.enqueueBatch('a', '1', 'summarize', input))
   assert.equal(jobs.get('a').jobs.length, 6)
 })
+
+void test('queue priorities and deferred starts survive restart without retrying failed paid work', async () => {
+  let now = 0
+  const settings = config(),
+    store = new MemoryStateStore(),
+    executed: string[] = []
+  const ports = {
+    allowed: () => true,
+    available: () => true,
+    input: () => {
+      throw new Error('unused')
+    },
+    execute: (_owner: string, job: { id: string }) => {
+      executed.push(job.id)
+      return Promise.resolve({ text: 'Result', images: [] })
+    },
+    deliver: () => Promise.resolve('queued' as const)
+  }
+  const jobs = new Jobs(settings, ports, store, () => now),
+    input = {
+      prompt: 'Question',
+      documents: [],
+      images: [],
+      memories: [],
+      instructions: ''
+    }
+  const first = jobs.enqueue('a', '1', 'summary', input),
+    second = jobs.enqueue('a', '1', 'summary', input)
+  for (const value of [-1, 10, NaN, 1.5])
+    assert.throws(() => jobs.prioritize('a', first.id, value))
+  assert.throws(() => jobs.prioritize('b', first.id, 1))
+  assert.throws(() => jobs.defer('b', first.id, 100))
+  for (const value of [-1, NaN, 0.5]) {
+    now = 1
+    assert.throws(() => jobs.defer('a', first.id, value))
+  }
+  now = 0
+  jobs.prioritize('a', second.id, 9)
+  jobs.defer('a', second.id, 100)
+  assert.equal(jobs.queue('a')[0]!.id, first.id)
+  await jobs.tick()
+  assert.deepEqual(executed, [first.id])
+  assert.equal(jobs.get('a').jobs[0]!.delivery, 'queued')
+  await jobs.tick()
+  assert.equal(executed.length, 1)
+  now = 100
+  const restored = new Jobs(settings, ports, store, () => now)
+  await restored.tick()
+  assert.equal(executed[1], second.id)
+  assert.throws(() => restored.defer('a', first.id, 200))
+  assert.throws(() => restored.prioritize('a', first.id, 1))
+  restored.delivered('a', first.id)
+  restored.delivered('a', second.id, 'suppressed')
+  restored.delivered('a', 'missing')
+  await restored.tick()
+  assert.equal(restored.get('a').jobs[1]!.delivery, 'suppressed')
+})
+
+void test('queue ranking falls back to creation order when priorities match', () => {
+  const settings = config(),
+    store = new MemoryStateStore()
+  let now = 0
+  const jobs = new Jobs(
+    settings,
+    {
+      allowed: () => true,
+      available: () => true,
+      input: () => {
+        throw new Error('unused')
+      },
+      execute: () => Promise.resolve({ text: 'Result', images: [] }),
+      deliver: () => Promise.resolve()
+    },
+    store,
+    () => now
+  )
+  const input = {
+    prompt: 'Question',
+    documents: [],
+    images: [],
+    instructions: '',
+    memories: []
+  }
+  const first = jobs.enqueue('a', '1', 'summary', input)
+  now = 1
+  const second = jobs.enqueue('a', '1', 'summary', input)
+  assert.deepEqual(
+    jobs.queue('a').map(item => item.id),
+    [first.id, second.id]
+  )
+  jobs.prioritize('a', first.id, 0)
+  jobs.prioritize('a', second.id, 0)
+  assert.equal(jobs.queue('a')[0]!.position, 1)
+})

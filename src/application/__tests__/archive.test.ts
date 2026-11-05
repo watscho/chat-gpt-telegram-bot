@@ -100,7 +100,7 @@ void test('archive parser rejects malformed structures, duplicate identities, un
   )
   const invalid: ((data: ReturnType<typeof archive>) => void)[] = [
     data => {
-      data.archiveVersion = 2
+      data.archiveVersion = 3
     },
     data => {
       Object.assign(data.profile, { threads: null })
@@ -531,4 +531,129 @@ void test('feedback merges preserve current votes by rejecting archives that exc
     /storage limits/
   )
   assert.equal(store.getProfile('a'), undefined)
+})
+
+void test('archives restore bookmarks, bounded source cards and answer preferences without importing notification settings or quotas', () => {
+  const settings = config(),
+    store = new MemoryStateStore(),
+    service = new ArchiveImport(settings, store, () => 10),
+    source = archive()
+  Object.assign(source.workspace.projects[0]!, { dailyBudget: 1000000 })
+  Object.assign(source.workspace, {
+    threads: { '1': { answerLanguage: 'es' } }
+  })
+  Object.assign(source.histories[0]![1].messages[1], {
+    evidence: [
+      { label: 'L1', title: 'Terms page 2', text: 'Original excerpt' },
+      {
+        label: 'W1',
+        title: 'Web',
+        text: 'Cited excerpt',
+        url: 'https://example.com'
+      }
+    ]
+  })
+  Object.assign(source.extensions, {
+    experience: {
+      language: 'ru',
+      quiet: { start: 0, end: 1 },
+      notices: [{ id: 'foreign' }],
+      bookmarks: [
+        { id: 'foreign', title: 'Saved', text: 'Useful text', tags: ['work'] },
+        { title: 'Without tags', text: 'Other text' }
+      ]
+    }
+  })
+  service.commit('a', JSON.stringify(source))
+  const data = store.getRecord<{
+    language: string
+    notices: unknown[]
+    bookmarks: { id: string; text: string }[]
+  }>('experience', 'a')!
+  assert.equal(data.language, 'en')
+  assert.equal(data.notices.length, 0)
+  assert.equal(data.bookmarks.length, 2)
+  assert.notEqual(data.bookmarks[0]!.id, 'foreign')
+  assert.equal(
+    store.getRecord<{ threads: Record<string, { answerLanguage: string }> }>(
+      'workspace',
+      'a'
+    )!.threads['2']!.answerLanguage,
+    'es'
+  )
+  assert.equal(
+    store.sessions()[0]![1].messages[1]!.evidence![1]!.url,
+    'https://example.com/'
+  )
+  store.putRecord('usage', 'a', {
+    day: '1970-01-01',
+    requests: 3,
+    projects: { '1': { requests: 3 } }
+  })
+  service.commit('a', JSON.stringify(source))
+  assert.equal(
+    store.getRecord<typeof data>('experience', 'a')!.bookmarks.length,
+    2
+  )
+  assert.equal(store.getRecord<{ requests: number }>('usage', 'a')!.requests, 3)
+  for (const budget of [-1, 1.5, 'bad', settings.dailyBudgetMicroUsd + 1]) {
+    const input = archive()
+    Object.assign(input.workspace.projects[0]!, { dailyBudget: budget })
+    assert.throws(() => service.parse(JSON.stringify(input)))
+  }
+  const nullable = archive()
+  Object.assign(nullable.workspace.projects[0]!, { dailyBudget: null })
+  assert.ok(service.parse(JSON.stringify(nullable)))
+  const badUrl = archive()
+  Object.assign(badUrl.histories[0]![1].messages[1], {
+    evidence: [
+      { label: 'W1', title: 'Bad', text: 'Excerpt', url: 'javascript:alert(1)' }
+    ]
+  })
+  assert.throws(() => service.parse(JSON.stringify(badUrl)))
+  const invalidLanguage = archive()
+  Object.assign(invalidLanguage.workspace, {
+    threads: { '1': { answerLanguage: 'unknown' } }
+  })
+  assert.throws(() => service.parse(JSON.stringify(invalidLanguage)))
+})
+
+void test('bookmark imports validate merged count and byte limits before the atomic write', () => {
+  const source = archive()
+  Object.assign(source.extensions, {
+    experience: {
+      bookmarks: [{ title: 'New', text: 'New text', tags: ['work'] }]
+    }
+  })
+  const store = new MemoryStateStore(),
+    state = {
+      language: 'en',
+      quiet: null,
+      digestMinutes: 0,
+      notices: [],
+      bookmarks: Array.from({ length: 100 }, (_, index) => ({
+        id: String(index),
+        title: 'Existing',
+        text: `Text ${index}`,
+        tags: [],
+        createdAt: 0
+      }))
+    }
+  store.putRecord('experience', 'a', state)
+  assert.throws(
+    () =>
+      new ArchiveImport(config(), store).commit('a', JSON.stringify(source)),
+    /bookmarks exceed/
+  )
+  assert.equal(store.getProfile('a'), undefined)
+  store.putRecord('experience', 'a', {
+    ...state,
+    bookmarks: [],
+    extra: 'x'.repeat(1000000)
+  })
+  assert.throws(
+    () =>
+      new ArchiveImport(config(), store).commit('a', JSON.stringify(source)),
+    /bookmarks exceed/
+  )
 })

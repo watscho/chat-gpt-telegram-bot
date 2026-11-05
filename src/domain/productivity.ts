@@ -1,6 +1,14 @@
-import type { Document, Image, Message } from './conversation.js'
+import type {
+  Document,
+  Image,
+  Message,
+  Evidence,
+  StructuredSpec
+} from './conversation.js'
 
 export interface PreparedRequest {
+  evidence?: Evidence[]
+  structured?: StructuredSpec
   summary?: string
   prompt: string
   images: Image[]
@@ -30,6 +38,8 @@ export interface ContextDraft {
   thread: string
   revision: string | undefined
   expiresAt: number
+  evidence?: Evidence[]
+  structured?: StructuredSpec
   summary?: string
   prompt: string
   estimate?: number

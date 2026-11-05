@@ -1,6 +1,6 @@
 {
   "name": "chat-gpt-telegram-bot",
-  "version": "5.0.0",
+  "version": "6.0.0",
   "private": true,
   "description": "A private TypeScript Telegram assistant with projects, streaming, usage controls, documents, image workflows, durable jobs and timezone-aware schedules.",
   "type": "module",

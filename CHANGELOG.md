@@ -1,5 +1,18 @@
 # Changelog
 
+## 6.0.0 — Delivery, evidence and structured results
+
+- Add timezone-aware quiet hours, grouped job/task notification digests, pending-delivery inspection, suppression and bounded delivery-only retries.
+- Add private tagged bookmarks, local search/pagination, quoted-message saves and answer/source buttons.
+- Retain bounded source cards with answer-bound excerpts and safe links; opening cards requires no page fetch or model call.
+- Attribute foreground, speech and background reservations to their origin project in the shared owner ledger; expose project estimates and daily sub-budgets.
+- Add strict CSV/JSON row requests, local shape/size validation, spreadsheet formula-prefix neutralization and retained file delivery.
+- Add ready-queue positions, priorities and deferred starts without preemption, ETA promises or automatic paid retries.
+- Add independent owner UI and conversation answer languages, static Russian/Spanish UI catalogs and English fallback.
+- Extend guided navigation, archive validation/atomic merges, erasure, privacy documentation and adjacent unit coverage.
+
+Breaking changes: SQLite metadata becomes schema 3; version 5 rejects it. Back up before upgrading and restore that backup to roll back. `/data` emits archive format 2; imports accept formats 1/2 and the legacy unversioned shape. Owner notification/language settings and quota counters are preserved at the destination, never imported. Queued work whose origin project was deleted now stops before provider execution. All 227 tests are unit-only with 100% executable source line, branch and function coverage; native/provider/deployment behavior is not qualified.
+
 ## 5.0.0 — Guided workflows and portable data
 
 - Add local actionable tasks with status/deadline controls, paginated lists, Done buttons and bounded reminder delivery retries.

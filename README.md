@@ -104,6 +104,24 @@ Open `/guide` (also shown by `/help`) for buttons grouped by tasks, context, doc
 
 See [Pro workflows and transfer limits](docs/pro-workflows.md). All tests remain unit-only; live/native behavior is not qualified by coverage.
 
+## Pro experience
+
+Version 6 adds delivery controls, saved evidence, project accounting and structured files. Start with `/guide delivery`, `/guide saved` or `/guide outputs`.
+
+| Goal                              | Commands                                                                     |
+| --------------------------------- | ---------------------------------------------------------------------------- |
+| Reduce notification noise         | `/quiet 22:00-08:00`, `/digest 1h`, `/notifications`, `/digest now`          |
+| Save useful passages              | Save answer/source buttons, `/bookmarks #work`, `/bookmark reply \| work`    |
+| Inspect cited evidence            | Source-card buttons or `/sources` on a retained answer                       |
+| Limit a project's estimated spend | `/project_budget 2`, `/project_usage` inside a selected project              |
+| Export validated rows             | `/output csv name,amount \| Extract these fields from the retained document` |
+| Manage queued work                | `/queue`, `/priority ID 9`, `/defer ID \| 2027-01-15 09:00`                  |
+| Select languages independently    | `/language ui ru`, `/language answer en`                                     |
+
+Quiet hours delay background notifications; work can still run. Manual result retrieval remains immediate. Project counters share owner caps and use UTC. Source cards retain excerpts; opening a card does not fetch a webpage. Structured output checks shape, not factual accuracy. UI catalogs cover navigation/common controls in English, Russian and Spanish with English fallback for uncatalogued technical text; generated and quoted content is preserved.
+
+Read the [experience guide and acceptance](docs/pro-experience.md) before upgrading: SQLite moves to schema 3 and data archives to format 2. Back up state before opening it with version 6; rollback requires the pre-upgrade backup.
+
 ## Pro productivity
 
 - Branch or revise retained turns while preserving the original conversation.
@@ -153,6 +171,7 @@ CI runs static checks, unit tests, the 100% coverage gate and a dependency advis
 ## Documentation
 
 - [User guide](docs/USER_GUIDE.md)
+- [Pro experience, limits and acceptance](docs/pro-experience.md)
 - [Configuration reference](docs/configuration.md)
 - [Operations, Docker, backups and live verification](docs/operations.md)
 - [Architecture and test conventions](docs/architecture.md)

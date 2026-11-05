@@ -1,3 +1,7 @@
+import {
+  structuredSchema,
+  structuredArtifact
+} from '../application/structured.js'
 import OpenAI, { toFile } from 'openai'
 import type {
   Response,
@@ -17,6 +21,8 @@ import { imageFromBytes } from './images.js'
 
 type ModelConfig = Pick<
   Config,
+  | 'maxDocumentBytes'
+  | 'maxExportBytes'
   | 'chatModel'
   | 'transcriptionModel'
   | 'maxOutputTokens'
@@ -78,7 +84,7 @@ export class OpenAIModel implements LanguageModel {
         ...messages.flatMap<ResponseInputItem>(message => {
           if (!message.images?.length && !message.documents?.length)
             return [{ role: message.role, content: message.content }]
-          // Generated images are supplied back as explicitly labelled reference inputs.
+          // Generated attachments are supplied back as explicitly labelled reference inputs.
           return [
             {
               role: 'user' as const,
@@ -87,7 +93,7 @@ export class OpenAIModel implements LanguageModel {
                   type: 'input_text' as const,
                   text:
                     message.role === 'assistant'
-                      ? `Previously generated image. Assistant text: ${message.content}`
+                      ? `Previously generated attachment. Assistant text: ${message.content}`
                       : message.content
                 },
                 ...(message.images ?? []).map(image => ({
@@ -137,6 +143,20 @@ export class OpenAIModel implements LanguageModel {
           ? options.enableImages !== false
           : options.enableSearch !== false
       )
+    if (options.structured) {
+      body.instructions +=
+        ' Return at most 100 rows. Values must be strings or null; use null for missing evidence and never invent unavailable fields.'
+      body.tools = []
+      body.tool_choice = 'none'
+      body.text = {
+        format: {
+          type: 'json_schema',
+          name: 'structured_rows',
+          strict: true,
+          schema: structuredSchema(options.structured)
+        }
+      }
+    }
     let response: Response | undefined
     const request = {
       timeout: this.config.imageTimeoutMs,
@@ -223,8 +243,14 @@ export class OpenAIModel implements LanguageModel {
       .join('\n')
     if (!text.trim() && !images.length)
       throw new Error('Incomplete model response')
+    const artifact = options.structured
+      ? structuredArtifact(text, options.structured, this.config.maxExportBytes)
+      : undefined
     return {
-      text,
+      ...(artifact ? { artifact } : {}),
+      text: artifact
+        ? `Structured output ready: ${artifact.rows} rows. Fields: ${options.structured!.fields.join(', ')}.`
+        : text,
       images,
       toolsUsed: {
         images: images.length,

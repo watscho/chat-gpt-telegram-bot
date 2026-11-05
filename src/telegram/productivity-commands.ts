@@ -73,7 +73,7 @@ export class ProductivityCommands {
       callback_data: `context:${draft.token}:${action}`
     })
     await ctx.text(
-      `Review before sending.${draft.estimate !== undefined ? ` Configured estimated cost: $${(draft.estimate / 1000000).toFixed(6)}; actual provider charges may differ.` : ''} Request: ${draft.prompt}\n${items.map(part => `${part.enabled ? '[x]' : '[ ]'} ${part.id}: ${part.label}`).join('\n')}\nUse /context show ID for full text or file metadata. History text and all deduplicated attachments are separate controls. Preview expires after 10 minutes.`,
+      `${draft.structured ? `Output format: ${draft.structured.format}; fields: ${draft.structured.fields.join(', ')}.\n` : ''}Review before sending.${draft.estimate !== undefined ? ` Configured estimated cost: $${(draft.estimate / 1000000).toFixed(6)}; actual provider charges may differ.` : ''} Request: ${draft.prompt}\n${items.map(part => `${part.enabled ? '[x]' : '[ ]'} ${part.id}: ${part.label}`).join('\n')}\nUse /context show ID for full text or file metadata. History text and all deduplicated attachments are separate controls. Preview expires after 10 minutes.`,
       {
         inline_keyboard: [
           ...items.map(part => [
@@ -458,6 +458,11 @@ export class ProductivityCommands {
           )
         const prepared = ctx.prepare(arg)
         prepared.references = this.library.references(hits)
+        prepared.evidence = hits.map((hit, index) => ({
+          label: `L${index + 1}`,
+          title: `${hit.name} (${hit.location})`,
+          text: hit.text
+        }))
         prepared.analysisOnly = true
         return prepared
       }

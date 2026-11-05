@@ -90,6 +90,7 @@ export class Workflow {
       if (dueAt !== null && (!Number.isFinite(dueAt) || dueAt <= this.now()))
         throw new UserError('Choose a future deadline or none.')
       task.dueAt = dueAt
+      delete task.delivery
       task.reminded = false
       task.attempts = 0
       task.nextAttempt = 0
@@ -227,9 +228,21 @@ export class Workflow {
     this.cache.delete(owner)
     this.owners.delete(owner)
   }
+  delivered(
+    owner: string,
+    id: string,
+    delivery: 'sent' | 'suppressed' = 'sent'
+  ): void {
+    const state = this.get(owner),
+      task = state.tasks.find(item => item.id === id)
+    if (task) {
+      task.delivery = delivery
+      this.save(owner, state)
+    }
+  }
   async tick(
     allowed: (owner: string) => boolean,
-    deliver: (owner: string, task: Task) => Promise<void>
+    deliver: (owner: string, task: Task) => Promise<void | 'queued'>
   ): Promise<void> {
     if (this.ticking) return
     this.ticking = true
@@ -265,8 +278,10 @@ export class Workflow {
           claim.nextAttempt = this.now() + 60000
           this.save(owner, attempt)
           let sent = false
+          let queuedDelivery = false
           try {
-            await deliver(owner, task)
+            const delivery = await deliver(owner, task)
+            queuedDelivery = delivery === 'queued'
             sent = true
           } catch {
             /* Retry delivery only; no provider work. */
@@ -275,6 +290,7 @@ export class Workflow {
             saved = current.tasks.find(item => item.id === task.id)
           if (saved && saved.dueAt === task.dueAt) {
             saved.reminded = sent
+            if (sent) saved.delivery = queuedDelivery ? 'queued' : 'sent'
             this.save(owner, current)
           }
         }

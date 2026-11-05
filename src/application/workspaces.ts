@@ -88,6 +88,27 @@ export class Workspaces {
       throw new UserError(
         'Use a model ID of 1..100 letters, numbers or model separators.'
       )
+    if (
+      thread.answerLanguage !== undefined &&
+      ![
+        'auto',
+        'en',
+        'ru',
+        'es',
+        'de',
+        'fr',
+        'it',
+        'pt',
+        'uk',
+        'tr',
+        'ja',
+        'zh',
+        'ar'
+      ].includes(thread.answerLanguage)
+    )
+      throw new UserError(
+        'Unsupported answer language. Use auto, en, ru, es, de, fr, it, pt, uk, tr, ja, zh or ar.'
+      )
     state.threads[id] = thread
     this.save(owner, state)
   }
@@ -225,6 +246,25 @@ export class Workspaces {
     ]
       .filter(Boolean)
       .join('\n\n')
+  }
+  projectBudget(owner: string, id: string, amount: number): void {
+    const state = this.get(owner),
+      project = state.projects.find(item => item.id === id)
+    if (!project) throw new UserError('Select an existing project first.')
+    if (
+      !Number.isSafeInteger(amount) ||
+      amount < 0 ||
+      amount >
+        Math.min(
+          state.budget ?? this.config.dailyBudgetMicroUsd,
+          this.config.dailyBudgetMicroUsd
+        )
+    )
+      throw new UserError(
+        'Project budget must be non-negative and within the current owner ceiling.'
+      )
+    project.dailyBudget = amount
+    this.save(owner, state)
   }
   operatorBudget(): number {
     return this.config.dailyBudgetMicroUsd

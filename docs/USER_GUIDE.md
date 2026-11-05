@@ -397,3 +397,27 @@ Conversations/projects receive new IDs and an import suffix, preserving existing
 Credentials, usage/quota counters, jobs/results, schedules, delivery mappings, active buttons and pending previews are not restored. Global voice, timezone and budget settings stay those of the destination. This prevents old paid jobs and reminders from firing merely because an archive was imported. Provider/Telegram copies and operator backups remain outside the import.
 
 The merge writes profile, new sessions and merged content records atomically, then refreshes local caches. It does not evict existing histories to make room. Invalid content, unsupported versions or insufficient limits reject the merge. Native database migration/durability is not certified by unit coverage; keep an operator backup before moving important data.
+
+## Delivery, saved evidence and files (version 6)
+
+Start with `/guide delivery`, `/guide saved` or `/guide outputs`. The [Pro experience guide](pro-experience.md) gives full syntax, limits, retention and examples for all seven new capabilities.
+
+```text
+/timezone Asia/Tbilisi
+/quiet 22:00-08:00
+/digest 1h
+/notifications
+/digest now
+/bookmark add Decision | Use the approved design | work,decision
+/bookmarks #work
+/project_budget 2.5
+/project_usage
+/output csv name,amount | Extract rows from the retained invoice
+/queue
+/priority JOB_ID 9
+/defer JOB_ID | 2027-01-15 09:00
+/language ui ru
+/language answer en
+```
+
+Quiet hours delay notifications while background work can still run. `/result ID` remains immediate; `/notifications retry ID` retries delivery only. Save answer/source buttons make explicit bookmarks; source-card buttons display retained excerpts without fetching a webpage. Bookmarks survive history expiry/reset until explicitly deleted or erased. Project estimates share the owner's UTC budget and are not invoices. CSV/JSON output uses nullable string cells and is validated for shape/size, not truth. Queue positions are local snapshots without ETAs. Interface and answer languages are independent; technical UI text without a catalog entry remains English.

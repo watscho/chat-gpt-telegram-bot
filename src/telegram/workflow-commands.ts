@@ -20,6 +20,12 @@ export interface WorkflowContext {
   imported(): void
 }
 const sections: Record<string, string> = {
+  delivery:
+    'Delivery and language\n/quiet 22:00-08:00 and /digest 1h group background notifications. /notifications lists pending items; /digest now delivers them immediately. /language ui en|ru|es changes menus, while /language answer auto|code controls generated prose.',
+  saved:
+    'Saved answers and sources\nUse Save answer or Save source, then /bookmarks or /bookmarks #tag. /bookmark tags ID | tags organizes saved passages. /sources opens retained citation cards without fetching new pages.',
+  outputs:
+    'Structured files and queue\n/output json name,amount | request or /output csv name,amount | request creates validated rows and a file. /queue shows owned queued jobs; /priority ID 0..9 changes priority; /defer ID | date or now changes start time. /project_budget USD and /project_usage manage project estimates.',
   start:
     'Start here\nSend a text, voice, photo or document. /new Work creates a separate conversation. /settings opens preferences. Costs are API usage, separate from ChatGPT subscriptions.',
   tasks:
@@ -168,7 +174,7 @@ export class WorkflowCommands {
           { text: 'Next tasks', callback_data: `tasks:${scope}:${page + 1}` }
         ])
       await ctx.text(
-        `Tasks · page ${page}/${pages}\n${selected.map(task => `${task.id} · conversation ${task.thread} · ${task.status}\n${task.title}\nDue: ${task.dueAt === null ? 'none' : new Date(task.dueAt).toISOString()}${task.attempts >= 3 && !task.reminded ? ' (delivery exhausted; set a new deadline to retry)' : ''}`).join('\n\n')}`,
+        `Tasks · page ${page}/${pages}\n${selected.map(task => `${task.id} · conversation ${task.thread} · ${task.status}\n${task.title}\nDue: ${task.dueAt === null ? 'none' : new Date(task.dueAt).toISOString()}\nDelivery: ${task.delivery ?? 'pending'}${task.attempts >= 3 && !task.reminded ? ' (delivery exhausted; set a new deadline to retry)' : ''}`).join('\n\n')}`,
         { inline_keyboard: rows }
       )
       return true
@@ -195,7 +201,9 @@ export class WorkflowCommands {
             ]
           }
         )
-      } else if (['done', 'open', 'delete', 'due'].includes(action ?? '')) {
+      } else if (
+        ['done', 'open', 'delete', 'due'].some(value => value === action)
+      ) {
         if (action === 'due' && split < 0)
           throw new UserError('Usage: /task due ID | YYYY-MM-DD HH:MM or none.')
         const expression = split < 0 ? 'none' : arg.slice(split + 1).trim()

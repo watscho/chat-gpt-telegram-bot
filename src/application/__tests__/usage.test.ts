@@ -93,3 +93,42 @@ void test('daily monetary, request and feature caps block paid work while auto c
   assert.equal(disabled.options.enableImages, false)
   assert.equal(disabled.options.enableSearch, false)
 })
+
+void test('project estimates share the owner reservation write, refund unused tools and preserve UTC-day isolation', () => {
+  const settings = config(),
+    store = new MemoryStateStore(),
+    ws = new Workspaces(settings, store)
+  let now = 0
+  const ledger = new UsageLedger(settings, ws, store, () => now),
+    project = ws.create('a', 'Work')
+  assert.throws(() => ledger.reserve('a', 'chat', true, 'missing'))
+  assert.throws(() => ledger.projectReport('a', 'missing'))
+  assert.match(ledger.projectReport('a', project.id), /Requests: 0/)
+  for (const value of [-1, NaN, settings.dailyBudgetMicroUsd + 1])
+    assert.throws(() => ws.projectBudget('a', project.id, value))
+  assert.throws(() => ws.projectBudget('a', 'missing', 1))
+  ws.projectBudget('a', project.id, settings.estimateChat)
+  const chat = ledger.reserve('a', 'chat', true, project.id)
+  chat.finish()
+  assert.equal(ledger.get('a').projects![project.id]!.requests, 1)
+  assert.throws(() => ledger.reserve('a', 'chat', true, project.id), /budget/)
+  ws.projectBudget('a', project.id, settings.dailyBudgetMicroUsd)
+  const tools = ledger.reserve('a', 'auto', true, project.id)
+  tools.finish({ images: 0, searches: 0 })
+  assert.equal(
+    ledger.get('a').projects![project.id]!.estimatedMicroUsd,
+    settings.estimateChat * 2
+  )
+  const failure = ledger.reserve('a', 'voice', true, project.id)
+  failure.fail()
+  assert.equal(ledger.get('a').projects![project.id]!.failed, 1)
+  assert.match(ledger.projectReport('a', project.id), /failed: 1/)
+  const pending = ledger.reserve('a', 'chat', true, project.id)
+  now = 86400000
+  pending.fail()
+  assert.equal(ledger.get('a').requests, 0)
+  const late = ledger.reserve('a', 'auto', true, project.id)
+  now += 86400000
+  late.finish({ images: 0, searches: 0 })
+  assert.equal(ledger.get('a').requests, 0)
+})

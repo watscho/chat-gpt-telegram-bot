@@ -1,3 +1,7 @@
+import { Experience } from './experience.js'
+import type { Bookmark, ExperienceState } from '../domain/experience.js'
+import { evidenceCards } from './evidence.js'
+import { safeSource } from './sources.js'
 import { Workspaces } from './workspaces.js'
 import type { Config } from '../config.js'
 import type { Message, Document } from '../domain/conversation.js'
@@ -50,6 +54,7 @@ interface Portable {
     recap?: Recap
   }[]
   projects: Project[]
+  bookmarks: Bookmark[]
   notes: string[]
   templates: { name: string; body: string }[]
   library: LibraryFile[]
@@ -74,7 +79,11 @@ export class ArchiveImport {
       throw new UserError('Archive must be valid JSON.')
     }
     const root = object(data)
-    if (root.archiveVersion !== undefined && root.archiveVersion !== 1)
+    if (
+      root.archiveVersion !== undefined &&
+      root.archiveVersion !== 1 &&
+      root.archiveVersion !== 2
+    )
       throw new UserError('Unsupported archive version.')
     const profile = object(root.profile),
       workspace = object(root.workspace)
@@ -101,6 +110,16 @@ export class ArchiveImport {
           )
         )
         const files = documents(message.documents)
+        const evidence = list(message.evidence ?? [], 16).map(item => {
+          const card = object(item),
+            title = text(card.title, 256),
+            body = text(card.text, 1200),
+            label = text(card.label, 12)
+          const url = card.url === undefined ? undefined : text(card.url, 2048)
+          if (url !== undefined && !safeSource({ title, url }))
+            throw new UserError('Invalid archive source URL.')
+          return { label, title, text: body, ...(url ? { url } : {}) }
+        })
         return {
           role: message.role,
           content: text(message.content, this.config.maxHistoryCharacters),
@@ -108,7 +127,8 @@ export class ArchiveImport {
             ? { id: text(message.id, 100) }
             : {}),
           ...(images.length ? { images } : {}),
-          ...(files.length ? { documents: files } : {})
+          ...(files.length ? { documents: files } : {}),
+          ...(evidence.length ? { evidence: evidenceCards(evidence) } : {})
         } satisfies Message
       })
       if (
@@ -121,8 +141,21 @@ export class ArchiveImport {
           'Archive histories must contain complete alternating turns.'
         )
       if (
-        items.reduce((sum, item) => sum + item.content.length, 0) >
-          this.config.maxHistoryCharacters ||
+        items.reduce(
+          (sum, item) =>
+            sum +
+            item.content.length +
+            (item.evidence ?? []).reduce(
+              (total, card) =>
+                total +
+                card.label.length +
+                card.title.length +
+                card.text.length +
+                (card.url?.length ?? 0),
+              0
+            ),
+          0
+        ) > this.config.maxHistoryCharacters ||
         items
           .flatMap(item => [...(item.images ?? []), ...(item.documents ?? [])])
           .reduce((sum, item) => sum + item.data.length, 0) >
@@ -181,10 +214,21 @@ export class ArchiveImport {
     const projects = list(workspace.projects, this.config.maxProjects).map(
       item => {
         const p = object(item)
+        const budget = p.dailyBudget
+        if (
+          budget !== undefined &&
+          budget !== null &&
+          (typeof budget !== 'number' ||
+            !Number.isSafeInteger(budget) ||
+            budget < 0 ||
+            budget > this.config.dailyBudgetMicroUsd)
+        )
+          throw new UserError('Invalid archive project budget.')
         const notes = list(p.notes, this.config.maxMemories).map(note =>
           text(note, this.config.maxMemoryCharacters)
         )
         return {
+          ...(typeof budget === 'number' ? { dailyBudget: budget } : {}),
           id: id(p.id),
           title: text(p.title, 80),
           instructions: text(p.instructions, 4000),
@@ -224,6 +268,8 @@ export class ArchiveImport {
       const raw =
         settings[thread.id] === undefined ? {} : object(settings[thread.id])
       const patch: Partial<ThreadSettings> = {}
+      if (raw.answerLanguage !== undefined)
+        patch.answerLanguage = text(raw.answerLanguage, 10)
       if (raw.instructions !== undefined)
         patch.instructions = text(raw.instructions, 4000)
       if (raw.mode !== undefined)
@@ -258,6 +304,18 @@ export class ArchiveImport {
     const ext = root.extensions === undefined ? {} : object(root.extensions),
       prod = ext.productivity === undefined ? {} : object(ext.productivity),
       flow = ext.workflow === undefined ? {} : object(ext.workflow)
+    const experience =
+        ext.experience === undefined ? {} : object(ext.experience),
+      bookmarkValidator = new Experience(undefined, this.now)
+    const bookmarks = list(experience.bookmarks ?? [], 100).map(item => {
+      const entry = object(item)
+      return bookmarkValidator.bookmark(
+        'archive',
+        text(entry.title, 80),
+        text(entry.text, 4000),
+        list(entry.tags ?? [], 10).map(tag => text(tag, 24))
+      )
+    })
     const templates = list(prod.templates ?? [], 50).map(item => {
       const template = object(item)
       const name = text(template.name, 32),
@@ -358,6 +416,7 @@ export class ArchiveImport {
       glossary[project] = entries
     }
     return {
+      bookmarks,
       threads,
       projects,
       notes,
@@ -378,7 +437,7 @@ export class ArchiveImport {
     const conflicts = archive.templates
       .filter(item => names.includes(item.name))
       .map(item => item.name)
-    return `Import preview: ${archive.threads.length} conversations, ${archive.projects.length} projects, ${archive.templates.length} templates, ${archive.library.length} library documents, ${archive.tasks.length} tasks.\nConversations/projects receive new IDs. Per-conversation preferences, forward collections (collection off) and local feedback are restored. Conflicting template names are skipped: ${conflicts.join(', ') || '(none)'}. Existing notes are merged within limits. Tasks import without deadlines. Jobs, schedules, quota counters, credentials, callbacks, drafts and delivery mappings are never imported. Current data is preserved.`
+    return `Import preview: ${archive.threads.length} conversations, ${archive.projects.length} projects, ${archive.templates.length} templates, ${archive.library.length} library documents, ${archive.tasks.length} tasks, ${archive.bookmarks.length} bookmarks.\nConversations/projects receive new IDs. Per-conversation preferences, forward collections (collection off) and local feedback are restored. Conflicting template names are skipped: ${conflicts.join(', ') || '(none)'}. Existing notes are merged within limits. Tasks import without deadlines. Jobs, schedules, quota counters, credentials, callbacks, drafts and delivery mappings are never imported. Current data is preserved.`
   }
   commit(owner: string, source: string): void {
     const archive = this.parse(source),
@@ -415,6 +474,24 @@ export class ArchiveImport {
       quotes: [],
       approval: null
     }
+    const experience = this.store.getRecord<ExperienceState>(
+      'experience',
+      owner
+    ) ?? {
+      language: 'en',
+      quiet: null,
+      digestMinutes: 0,
+      bookmarks: [],
+      notices: []
+    }
+    for (const bookmark of archive.bookmarks)
+      if (!experience.bookmarks.some(item => item.text === bookmark.text))
+        experience.bookmarks.push(bookmark)
+    if (
+      experience.bookmarks.length > 100 ||
+      Buffer.byteLength(JSON.stringify(experience)) > 1000000
+    )
+      throw new UserError('Imported bookmarks exceed the destination limits.')
     const library = this.store.getRecord<LibraryFile[]>('library', owner) ?? []
     if (
       profile.threads.length + archive.threads.length >
@@ -540,7 +617,8 @@ export class ArchiveImport {
       ['workspace', ws],
       ['productivity', prod],
       ['workflow', flow],
-      ['library', library]
+      ['library', library],
+      ['experience', experience]
     ])
   }
 }

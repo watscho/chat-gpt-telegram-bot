@@ -2,6 +2,7 @@ import type { Document } from './conversation.js'
 
 export type Mode = 'default' | 'developer' | 'editor' | 'translator' | 'custom'
 export interface ThreadSettings {
+  answerLanguage?: string
   model?: string | null
   reviewContext?: boolean
   mode: Mode
@@ -13,6 +14,7 @@ export interface ThreadSettings {
   imageVersion: string | null
 }
 export interface Project {
+  dailyBudget?: number | null
   id: string
   title: string
   instructions: string
@@ -29,7 +31,17 @@ export interface Workspace {
   searchLimit: number | null
   voiceLimit: number | null
 }
+export interface ProjectUsage {
+  requests: number
+  estimatedMicroUsd: number
+  images: number
+  searches: number
+  voice: number
+  transcriptions: number
+  failed: number
+}
 export interface Usage {
+  projects?: Record<string, ProjectUsage>
   day: string
   requests: number
   estimatedMicroUsd: number
