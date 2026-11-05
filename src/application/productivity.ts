@@ -213,6 +213,7 @@ export class Productivity {
         request.references
       )
     const draft: ContextDraft = {
+      ...(request.workbench ? { workbench: request.workbench } : {}),
       ...(request.reviewTasks ? { reviewTasks: true } : {}),
       ...(request.evidence ? { evidence: request.evidence } : {}),
       ...(request.structured ? { structured: request.structured } : {}),
@@ -278,6 +279,7 @@ export class Productivity {
   ): PreparedRequest {
     const draft = this.draft(owner, thread, token, revision)
     const request: PreparedRequest = {
+      ...(draft.workbench ? { workbench: draft.workbench } : {}),
       ...(draft.reviewTasks ? { reviewTasks: true } : {}),
       ...(draft.structured ? { structured: draft.structured } : {}),
       prompt: draft.prompt,

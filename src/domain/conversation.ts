@@ -1,3 +1,4 @@
+import type { ToolApproval, WorkbenchRequest } from './workbench.js'
 export interface Evidence {
   label: string
   title: string
@@ -39,6 +40,8 @@ export interface Message {
 }
 
 export interface ModelReply {
+  files?: Document[]
+  approval?: ToolApproval
   artifact?: Artifact
   evidence?: Evidence[]
   text: string
@@ -48,6 +51,8 @@ export interface ModelReply {
 }
 
 export interface ReplyOptions {
+  workbench?: WorkbenchRequest
+  scope?: { owner: string; thread: string; project: string | null }
   structured?: StructuredSpec
   evidence?: Evidence[]
   action?: 'auto' | 'generate' | 'edit'

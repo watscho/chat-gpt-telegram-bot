@@ -9,6 +9,9 @@ let stoppingEarly = false
 let storesClosed = 0
 let stops = 0
 let workerFailure = false
+let miniEnabled = false,
+  miniFail = false,
+  miniStopFail = false
 import { ConfigurationError } from '../config.js'
 import { dependencies } from '../infrastructure/dependencies.js'
 import { config } from './helpers.js'
@@ -17,7 +20,9 @@ void test('entrypoint initializes composition, reports safe failures and registe
   t.mock.property(dependencies, 'loadConfig', () => {
     if (failure === 'config')
       throw new ConfigurationError('Missing required configuration: TEST')
-    return config()
+    const settings = config()
+    if (miniEnabled) settings.workbench.miniAppURL = 'https://voice.example.com'
+    return settings
   })
   t.mock.property(
     dependencies,
@@ -33,6 +38,22 @@ void test('entrypoint initializes composition, reports safe failures and registe
     dependencies,
     'RealtimeSpeech',
     class {} as unknown as typeof dependencies.RealtimeSpeech
+  )
+  t.mock.property(
+    dependencies,
+    'MiniAppServer',
+    class {
+      start() {
+        return miniFail
+          ? Promise.reject(new Error('private-start'))
+          : Promise.resolve()
+      }
+      stop() {
+        return miniStopFail
+          ? Promise.reject(new Error('private-stop'))
+          : Promise.resolve()
+      }
+    } as unknown as typeof dependencies.MiniAppServer
   )
   t.mock.property(
     dependencies,
@@ -109,4 +130,15 @@ void test('entrypoint initializes composition, reports safe failures and registe
   assert.equal(exits.at(-1), 0)
   assert.equal(stops, 3)
   assert.equal(storesClosed, 2)
+  miniEnabled = true
+  miniFail = true
+  await assert.rejects(main())
+  miniFail = false
+  miniStopFail = true
+  stoppingEarly = false
+  await main()
+  events.get('SIGTERM')!()
+  await new Promise(resolve => setImmediate(resolve))
+  events.get('exit')!()
+  assert.ok(logs.includes('Voice server shutdown failed'))
 })

@@ -8,6 +8,8 @@ export async function main(): Promise<void> {
     SQLiteStateStore,
     OpenAIModel,
     RealtimeSpeech,
+    OpenAIWorkbench,
+    MiniAppServer,
     createBot
   } = dependencies
   const config = loadConfig()
@@ -21,12 +23,28 @@ export async function main(): Promise<void> {
     config,
     model: new OpenAIModel(client, config),
     store,
-    speech: new RealtimeSpeech(client, config)
+    speech: new RealtimeSpeech(client, config),
+    provider: new OpenAIWorkbench(client, config)
   })
+  let miniApp: InstanceType<typeof MiniAppServer> | undefined
+  try {
+    if (config.workbench.miniAppURL) {
+      miniApp = new MiniAppServer(config, bot)
+      await miniApp.start()
+    }
+  } catch (error) {
+    bot.stopJobs()
+    store.close()
+    throw error
+  }
   let worker: ReturnType<typeof setInterval> | undefined
   const stopWorker = () => {
     if (worker) clearInterval(worker)
     bot.stopJobs()
+    if (miniApp)
+      void miniApp
+        .stop()
+        .catch(() => console.error('Voice server shutdown failed'))
   }
   process.once('exit', () => {
     stopWorker()
@@ -52,13 +70,20 @@ export async function main(): Promise<void> {
   }
   process.once('SIGINT', () => shutdown('SIGINT'))
   process.once('SIGTERM', () => shutdown('SIGTERM'))
-  await bot.launch({ dropPendingUpdates: true }, () => {
-    console.info('Telegram bot authenticated; starting polling')
-    worker = setInterval(() => {
-      void bot.tickJobs().catch(() => console.error('Background worker failed'))
-    }, config.workerIntervalMs)
-    worker.unref()
-  })
+  try {
+    await bot.launch({ dropPendingUpdates: true }, () => {
+      console.info('Telegram bot authenticated; starting polling')
+      worker = setInterval(() => {
+        void bot
+          .tickJobs()
+          .catch(() => console.error('Background worker failed'))
+      }, config.workerIntervalMs)
+      worker.unref()
+    })
+  } catch (error) {
+    stopWorker()
+    throw error
+  }
 }
 
 export function reportFailure(error: unknown): void {

@@ -1,3 +1,5 @@
+import { OpenAIWorkbench } from './openai-workbench.js'
+import { MiniAppServer } from './miniapp-server.js'
 import OpenAI from 'openai'
 import { loadConfig } from '../config.js'
 import { OpenAIModel } from './openai-model.js'
@@ -12,5 +14,7 @@ export const dependencies = {
   OpenAIModel,
   SQLiteStateStore,
   RealtimeSpeech,
+  OpenAIWorkbench,
+  MiniAppServer,
   createBot
 }

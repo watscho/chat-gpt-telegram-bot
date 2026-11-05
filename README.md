@@ -33,6 +33,12 @@ npm run build
 npm start
 ```
 
+## Provider workbench
+
+Version 8 adds `/analyze` (Python and downloadable files), `/knowledge` (private project semantic search), `/connections` and `/connect` (reviewed MCP tools), `/meeting` (recording protocols and reviewed tasks), and `/live` (a voice Mini App). Start with `/pro`. All paid provider workflows are explicit; external actions require an additional exact-arguments approval.
+
+See [provider setup, user paths and limits](docs/pro-provider.md) before enabling cloud uploads, authenticated MCP endpoints or public HTTPS live voice. Account/model access and deployment remain operator setup; only unit/static qualification is included.
+
 ## Commands
 
 | Command                                  | Behavior                                                                        |

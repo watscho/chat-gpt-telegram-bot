@@ -1,4 +1,7 @@
+import { workbenchSettings } from './application/workbench-settings.js'
+import type { WorkbenchConfig } from './domain/workbench.js'
 export interface Config {
+  workbench: WorkbenchConfig
   confirmExpensiveRequests: boolean
   streamResponses: boolean
   dailyBudgetMicroUsd: number
@@ -93,7 +96,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       'Invalid configuration: ALLOWED_TELEGRAM_USER_IDS'
     )
   }
+  let workbench: WorkbenchConfig
+  try {
+    workbench = workbenchSettings(env, integer)
+  } catch {
+    throw new ConfigurationError(
+      'Invalid configuration: workbench settings (MINI_APP_URL, OPENAI_MCP_CONNECTIONS or provider limits)'
+    )
+  }
   return {
+    workbench,
     confirmExpensiveRequests:
       choice('CONFIRM_EXPENSIVE_REQUESTS', ['true', 'false'], 'true') ===
       'true',

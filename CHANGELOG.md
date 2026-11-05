@@ -1,5 +1,15 @@
 # Changelog
 
+## 8.0.0 — Provider workbench
+
+- Add reviewed Code Interpreter analysis with isolated provider containers and bounded downloadable artifacts.
+- Add opt-in owner/project cloud semantic libraries with readiness inspection, scoped evidence and deletion tracking.
+- Add operator-configured authenticated MCP services with exact single-use tool approvals and configuration-bound continuations.
+- Add an authenticated live voice Mini App with explicit microphone controls, modes, quota reservations, a server watchdog and restart cleanup.
+- Add reviewed meeting transcription, transcript downloads, structured protocols and separately confirmed tasks; speaker labeling remains explicit and disabled by default.
+- Persist minimal remote cleanup metadata through erasure, preserve destination cloud state on import, and document retention, setup, cost and provider-acceptance limits.
+- Pass 287 adjacent unit tests with 100% executable-source lines, branches and functions; type, lint, format and build checks pass. No paid or native acceptance runs.
+
 ## 7.0.0 — Daily workflows
 
 - Replace the initial command wall with guided focus/language setup, explicit sample generation and a free skip path; configured users land on Today.

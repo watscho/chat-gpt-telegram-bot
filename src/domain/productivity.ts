@@ -1,3 +1,4 @@
+import type { WorkbenchRequest } from './workbench.js'
 import type {
   Document,
   Image,
@@ -7,6 +8,7 @@ import type {
 } from './conversation.js'
 
 export interface PreparedRequest {
+  workbench?: WorkbenchRequest
   reviewTasks?: boolean
   evidence?: Evidence[]
   structured?: StructuredSpec
@@ -35,6 +37,7 @@ export interface ContextPart {
   enabled: boolean
 }
 export interface ContextDraft {
+  workbench?: WorkbenchRequest
   reviewTasks?: boolean
   token: string
   thread: string
