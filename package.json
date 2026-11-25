@@ -42,7 +42,7 @@
     "fast-xml-parser": "5.12.0",
     "openai": "7.50.0",
     "pdfjs-dist": "6.5.438",
-    "pdfkit": "0.20.2",
+    "pdfkit": "0.21.0",
     "pptxgenjs": "4.0.1",
     "telegraf": "4.16.3"
   },
